@@ -1,0 +1,9 @@
+{
+  "name": "dailyReview",
+  "version": "1.0.0",
+  "description": "应用内「昨日复盘」简报生成",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

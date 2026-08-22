@@ -1,0 +1,19 @@
+# 依赖
+node_modules/
+
+# 敏感文件：含腾讯云 SecretId / SecretKey 明文，切勿提交
+语音识别API.txt
+
+# 本地个人配置（SSH key 指纹、开发者工具私有配置）
+github sshAPI.txt
+project.private.config.json
+
+# 需求沟通记录（内部工作文档，默认不公开）
+初步沟通.md
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log

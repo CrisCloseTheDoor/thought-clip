@@ -1,0 +1,51 @@
+<view class="page detail-page" wx:if="{{entry}}">
+
+  <!-- 主卡片 -->
+  <view class="card detail-head">
+    <view class="type-row">
+      <text class="type-tag" style="background: {{entry.typeColor}}1F; color: {{entry.typeColor}};">{{entry.typeLabel}}</text>
+      <text class="time">{{entry.timeText}}</text>
+    </view>
+
+    <!-- 展示态 -->
+    <block wx:if="{{!editing}}">
+      <view class="detail-text">{{entry.text}}</view>
+      <view class="keywords" wx:if="{{entry.keywords && entry.keywords.length}}">
+        <text class="chip" wx:for="{{entry.keywords}}" wx:key="*this">#{{item}}</text>
+      </view>
+      <view class="edited-tag" wx:if="{{entry.edited}}">（已手动编辑）</view>
+    </block>
+
+    <!-- 编辑态 -->
+    <block wx:else>
+      <textarea
+        class="edit-area"
+        value="{{editText}}"
+        bindinput="onEditInput"
+        maxlength="-1"
+        auto-height
+      />
+      <view class="edit-actions">
+        <view class="btn btn-ghost" bindtap="cancelEdit">取消</view>
+        <view class="btn btn-primary" bindtap="saveEdit">保存</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 原始转写对比 -->
+  <view class="card raw-card" wx:if="{{entry.raw && entry.raw !== entry.text}}">
+    <view class="raw-head" bindtap="toggleRaw">
+      <text>原始转写（AI 整理前）</text>
+      <text class="arrow">{{showRaw ? '收起 ▾' : '展开 ▸'}}</text>
+    </view>
+    <view class="raw-body" wx:if="{{showRaw}}">{{entry.raw}}</view>
+  </view>
+
+  <!-- 操作 -->
+  <view class="action-row">
+    <view class="action" bindtap="copyText">{{editing ? '复制当前' : '复制'}}</view>
+    <view class="action" bindtap="startEdit" wx:if="{{!editing}}">编辑</view>
+    <view class="action danger" bindtap="deleteEntry">删除</view>
+  </view>
+
+</view>

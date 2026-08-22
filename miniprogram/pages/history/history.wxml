@@ -1,0 +1,19 @@
+<view class="page history-page">
+
+  <view class="page-title">历史记录</view>
+
+  <view class="day-group" wx:for="{{groups}}" wx:key="dayKey" wx:for-item="group">
+    <view class="day-head">{{group.label}} · {{group.items.length}} 条</view>
+    <entry-card
+      wx:for="{{group.items}}"
+      wx:key="_id"
+      entry="{{item}}"
+      bind:tapentry="goDetail"
+    />
+  </view>
+
+  <view class="empty" wx:if="{{!groups.length && !loading}}">还没有记录，去「记录」页按住按钮说点什么吧。</view>
+
+  <view class="load-state" wx:if="{{groups.length}}">{{finished ? '— 到底啦 —' : (loading ? '加载中…' : '上滑加载更多')}}</view>
+
+</view>

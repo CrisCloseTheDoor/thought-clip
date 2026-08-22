@@ -1,0 +1,29 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/history/history",
+    "pages/detail/detail",
+    "pages/settings/settings"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#14161A",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "Thought Clip",
+    "backgroundColor": "#14161A",
+    "backgroundTextStyle": "light"
+  },
+  "tabBar": {
+    "color": "#8A8F99",
+    "selectedColor": "#E8B44B",
+    "backgroundColor": "#171A20",
+    "borderStyle": "black",
+    "list": [
+      { "pagePath": "pages/index/index", "text": "记录" },
+      { "pagePath": "pages/history/history", "text": "历史" },
+      { "pagePath": "pages/settings/settings", "text": "设置" }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

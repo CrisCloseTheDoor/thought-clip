@@ -1,0 +1,104 @@
+<view class="page index-page">
+
+  <!-- 头部：日期 + streak -->
+  <view class="header">
+    <view class="header-left">
+      <view class="date">{{todayTitle}}</view>
+      <view class="streak" wx:if="{{streak > 0}}">
+        <text class="flame">🔥</text> 连续记录 {{streak}} 天
+      </view>
+      <view class="streak muted" wx:else>从今天开始积累你的 context</view>
+    </view>
+    <view class="header-right">
+      <view class="icon-btn" bindtap="goHistory">🕘</view>
+      <view class="icon-btn" bindtap="goSettings">⚙️</view>
+    </view>
+  </view>
+
+  <!-- 昨日复盘 -->
+  <view class="review-card" wx:if="{{review}}">
+    <view class="review-head">
+      <text class="review-title">{{review.title}}</text>
+      <view class="review-close" bindtap="dismissReview">✕</view>
+    </view>
+    <view class="review-body">{{review.summary}}</view>
+    <view class="review-foot" wx:if="{{review.refined}}">由 AI 生成 · 历史页查看完整记录</view>
+  </view>
+
+  <!-- 今日概览 -->
+  <view class="today-bar">
+    <view>今日 <text class="count">{{todayCount}}</text> 条</view>
+    <view class="hint">松手即存 · 碎片也是资产</view>
+  </view>
+
+  <!-- 舞台区：转写 / 已存卡片 / 空态 -->
+  <view class="stage">
+
+    <!-- 录音中 -->
+    <view class="transcript" wx:if="{{stage === 'recording'}}">
+      <view class="live-head">
+        <view class="live-dot"></view>
+        <text>{{recordSeconds >= 60 ? '已达 60s 上限，即将自动保存' : '正在录音 ' + recordSeconds + 's'}}</text>
+      </view>
+      <view class="live-text">{{recordSeconds >= 60 ? '即将自动结束…' : '（松手结束并识别）'}}</view>
+    </view>
+
+    <!-- 识别中 -->
+    <view class="transcript" wx:elif="{{stage === 'transcribing'}}">
+      <view class="live-head">
+        <view class="spin"></view>
+        <text>正在识别你的语音…</text>
+      </view>
+      <view class="live-text">稍等片刻</view>
+    </view>
+
+    <!-- 已保存卡片 -->
+    <view class="saved" wx:elif="{{savedEntry}}">
+      <view class="saved-head">
+        <view class="saved-badge {{savedEntry.refined ? 'done' : ''}}">
+          {{saving ? '整理中…' : (savedEntry.refined ? '✓ 已整理' : '已暂存')}}
+        </view>
+      </view>
+      <view class="saved-text">{{savedEntry.text}}</view>
+      <view class="saved-meta" wx:if="{{savedEntry.refined}}">
+        <text class="chip type-chip" style="color: {{savedEntry.typeColor}};">{{savedEntry.typeLabel}}</text>
+        <text class="chip" wx:for="{{savedEntry.keywords}}" wx:key="*this">#{{item}}</text>
+      </view>
+      <view class="saved-actions">
+        <view class="ghost-btn" bindtap="deleteLast">删除这条</view>
+      </view>
+    </view>
+
+    <!-- 空态 -->
+    <view class="stage-empty" wx:else>
+      <view class="quote">此刻的想法，</view>
+      <view class="quote">是未来你的资产。</view>
+    </view>
+  </view>
+
+  <!-- 麦克风 -->
+  <view class="mic-area">
+    <mic-button
+      recording="{{stage === 'recording'}}"
+      disabled="{{stage === 'transcribing'}}"
+      bind:recordstart="onRecordStart"
+      bind:recordstop="onRecordStop"
+    />
+  </view>
+
+  <!-- 今日时间线 -->
+  <view class="section-title">
+    <text>今日时间线</text>
+    <text class="more" bindtap="goHistory">查看全部 ›</text>
+  </view>
+  <view class="timeline" wx:if="{{todayEntries.length}}">
+    <entry-card
+      wx:for="{{todayEntries}}"
+      wx:key="_id"
+      entry="{{item}}"
+      bind:tapentry="goDetail"
+    />
+  </view>
+  <view class="empty" wx:else>今天还没有记录，按住下方按钮，说出第一段。</view>
+
+</view>

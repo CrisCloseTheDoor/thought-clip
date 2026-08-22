@@ -1,0 +1,106 @@
+.detail-page {
+  padding-top: 12rpx;
+}
+
+.detail-head {
+  padding: 30rpx 32rpx;
+}
+
+.type-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20rpx;
+}
+.type-tag {
+  font-size: 24rpx;
+  padding: 6rpx 20rpx;
+  border-radius: 999rpx;
+}
+.time {
+  font-size: 24rpx;
+  color: var(--text-faint);
+}
+
+.detail-text {
+  font-size: 34rpx;
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+.keywords {
+  margin-top: 20rpx;
+}
+.edited-tag {
+  margin-top: 14rpx;
+  font-size: 22rpx;
+  color: var(--text-faint);
+}
+
+/* 编辑态 */
+.edit-area {
+  width: 100%;
+  min-height: 160rpx;
+  font-size: 32rpx;
+  line-height: 1.7;
+  color: var(--text);
+  background: var(--card-2);
+  border-radius: 16rpx;
+  padding: 20rpx;
+  box-sizing: border-box;
+}
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20rpx;
+}
+.edit-actions .btn {
+  padding: 14rpx 36rpx;
+  font-size: 26rpx;
+  margin-left: 20rpx;
+}
+
+/* 原始转写 */
+.raw-card {
+  margin-top: 24rpx;
+  padding: 22rpx 30rpx;
+}
+.raw-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 26rpx;
+  color: var(--text-dim);
+}
+.raw-head .arrow {
+  color: var(--gold);
+  font-size: 24rpx;
+}
+.raw-body {
+  margin-top: 16rpx;
+  font-size: 26rpx;
+  color: var(--text-faint);
+  line-height: 1.7;
+  word-break: break-word;
+}
+
+/* 操作 */
+.action-row {
+  display: flex;
+  margin-top: 40rpx;
+}
+.action {
+  flex: 1;
+  text-align: center;
+  padding: 24rpx 0;
+  background: var(--card);
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  color: var(--text-dim);
+}
+.action + .action {
+  margin-left: 20rpx;
+}
+.action.danger {
+  color: var(--danger);
+}

@@ -1,0 +1,53 @@
+.entry-card {
+  position: relative;
+  background: var(--card);
+  border-radius: 24rpx;
+  padding: 26rpx 28rpx 24rpx 36rpx;
+  overflow: hidden;
+  margin-bottom: 20rpx;
+}
+
+.entry-card:active {
+  background: var(--card-2);
+}
+
+.type-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 8rpx;
+}
+
+.text {
+  font-size: 30rpx;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.raw {
+  margin-top: 14rpx;
+  padding: 16rpx 20rpx;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: var(--text-faint);
+}
+
+.meta {
+  margin-top: 18rpx;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.type-chip {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.time {
+  margin-left: auto;
+  font-size: 22rpx;
+  color: var(--text-faint);
+  margin-top: 6rpx;
+}

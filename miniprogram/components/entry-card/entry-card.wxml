@@ -1,0 +1,14 @@
+<view class="entry-card" bindtap="onTap">
+  <view class="type-bar" style="background: {{typeColor}};"></view>
+  <view class="body">
+    <view class="text">{{entry.text}}</view>
+
+    <view class="raw" wx:if="{{showRaw && entry.raw && entry.raw !== entry.text}}">{{entry.raw}}</view>
+
+    <view class="meta">
+      <text class="chip type-chip" style="color: {{typeColor}};">{{typeLabel}}</text>
+      <text class="chip" wx:for="{{entry.keywords}}" wx:key="*this">#{{item}}</text>
+      <text class="time" wx:if="{{!compact}}">{{timeText}}</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "记录",
+  "usingComponents": {
+    "mic-button": "/components/mic-button/mic-button",
+    "entry-card": "/components/entry-card/entry-card"
+  }
+}

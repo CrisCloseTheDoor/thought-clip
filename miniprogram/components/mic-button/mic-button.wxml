@@ -1,0 +1,13 @@
+<view
+  class="mic-wrap {{recording ? 'recording' : ''}} {{disabled ? 'disabled' : ''}}"
+  bindtouchstart="onTouchStart"
+  bindtouchend="onTouchEnd"
+  bindtouchcancel="onTouchCancel"
+>
+  <view class="ring ring-1"></view>
+  <view class="ring ring-2"></view>
+  <view class="mic-core">
+    <view class="mic-icon">🎙</view>
+    <view class="mic-tip">{{recording ? '松手保存' : '按住说话'}}</view>
+  </view>
+</view>

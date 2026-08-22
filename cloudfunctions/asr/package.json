@@ -1,0 +1,10 @@
+{
+  "name": "asr",
+  "version": "1.0.0",
+  "description": "腾讯云 ASR 语音转文字",
+  "main": "index.js",
+  "dependencies": {
+    "tencentcloud-sdk-nodejs-asr": "^4.0.0",
+    "wx-server-sdk": "~2.6.3"
+  }
+}

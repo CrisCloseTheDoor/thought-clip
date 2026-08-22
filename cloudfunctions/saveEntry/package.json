@@ -1,0 +1,9 @@
+{
+  "name": "saveEntry",
+  "version": "1.0.0",
+  "description": "AI 整理并保存一条记录（DeepSeek）",
+  "main": "index.js",
+  "dependencies": {
+    "wx-server-sdk": "~2.6.3"
+  }
+}

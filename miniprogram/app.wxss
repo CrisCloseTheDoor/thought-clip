@@ -1,0 +1,98 @@
+/**
+ * Thought Clip 全局样式 —— 深色极简 + 金色强调
+ * 个人资产 / 复利 隐喻：暖金主色，青灰辅助
+ */
+page {
+  --bg: #14161A;
+  --card: #1C1F26;
+  --card-2: #23262F;
+  --text: #EDEEF2;
+  --text-dim: #9BA0AB;
+  --text-faint: #6B707B;
+  --gold: #E8B44B;
+  --teal: #4FD1C5;
+  --danger: #F0666E;
+
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 28rpx;
+  line-height: 1.6;
+}
+
+/* 页面容器 */
+.page {
+  min-height: 100vh;
+  padding: 24rpx 30rpx 60rpx;
+  box-sizing: border-box;
+}
+
+.page-title {
+  font-size: 40rpx;
+  font-weight: 700;
+  padding: 12rpx 4rpx 24rpx;
+}
+
+/* 通用卡片 */
+.card {
+  background: var(--card);
+  border-radius: 24rpx;
+  padding: 28rpx 30rpx;
+}
+
+/* 按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20rpx 40rpx;
+  border-radius: 16rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+.btn-primary {
+  background: var(--gold);
+  color: #14161A;
+}
+.btn-ghost {
+  background: transparent;
+  border: 1rpx solid var(--text-faint);
+  color: var(--text-dim);
+}
+
+/* chip 标签 */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-dim);
+  margin-right: 10rpx;
+  margin-top: 6rpx;
+}
+
+/* 空态 */
+.empty {
+  text-align: center;
+  color: var(--text-faint);
+  padding: 80rpx 40rpx;
+  font-size: 26rpx;
+  line-height: 1.8;
+}
+
+/* 分组标题 */
+.group-title {
+  font-size: 26rpx;
+  color: var(--text-faint);
+  margin: 32rpx 8rpx 16rpx;
+}
+
+/* 加载/到底 状态 */
+.load-state {
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 24rpx;
+  padding: 30rpx 0 40rpx;
+}

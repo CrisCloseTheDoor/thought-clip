@@ -1,0 +1,89 @@
+<view class="page settings-page">
+
+  <view class="page-title">设置</view>
+
+  <!-- AI 整理引擎 -->
+  <view class="group-title">AI 整理引擎</view>
+  <view class="card group">
+    <radio-group bindchange="onModeChange">
+      <label class="mode-item">
+        <radio value="own" checked="{{apiMode === 'own'}}" color="#E8B44B" />
+        <view class="mode-body">
+          <view class="mode-name">使用我的 DeepSeek Key</view>
+          <view class="mode-desc">隐私优先：我的 Key 只用于向 DeepSeek 发起整理请求，数据不经过开发者共享通道。</view>
+        </view>
+      </label>
+
+      <label class="mode-item">
+        <radio value="dev" checked="{{apiMode === 'dev'}}" color="#E8B44B" />
+        <view class="mode-body">
+          <view class="mode-name">使用开发者提供的 API</view>
+          <view class="mode-desc">零配置即用；记录文本会经开发者云环境发送给 DeepSeek 整理（需同意下方隐私说明）。</view>
+        </view>
+      </label>
+
+      <label class="mode-item">
+        <radio value="none" checked="{{apiMode === 'none'}}" color="#E8B44B" />
+        <view class="mode-body">
+          <view class="mode-name">原文记录（默认）</view>
+          <view class="mode-desc">不开启 AI 整理，直接保存原文。最省事、最隐私，但不生成关键词/分类与每日总结。</view>
+        </view>
+      </label>
+    </radio-group>
+
+    <!-- 原文记录模式说明 -->
+    <view class="none-note" wx:if="{{apiMode === 'none'}}">
+      记录将以原文保存，不经过 AI 大模型。如需自动清理语气词、分类和每日总结，请切换到上方两种 AI 模式。
+    </view>
+
+    <!-- 自有 Key 模式 -->
+    <view class="key-block" wx:if="{{apiMode === 'own'}}">
+      <view class="own-status">
+        <view class="mode-desc" wx:if="{{apiKey}}">已配置：{{apiKeyMask}}</view>
+        <view class="mode-desc warn" wx:else>尚未配置 Key，点击下方按钮填写</view>
+      </view>
+      <view class="key-actions">
+        <view class="btn btn-primary" bindtap="changeKey">{{apiKey ? '更换 Key' : '填写 Key'}}</view>
+        <view class="btn btn-ghost" bindtap="testKey" wx:if="{{apiKey}}">测试连接</view>
+      </view>
+      <view class="privacy-note">Key 仅保存在你自己的云数据库（users 集合），记录整理与昨日复盘都会使用它，仅用于调用 DeepSeek。</view>
+    </view>
+
+    <!-- 开发者 API 模式 -->
+    <view class="dev-note" wx:if="{{apiMode === 'dev'}}">
+      <view class="dev-status {{devConsent ? 'ok' : ''}}">
+        {{devConsent ? '✓ 已同意隐私说明' : '● 尚未同意隐私说明'}}
+      </view>
+      <view class="btn btn-primary consent-btn" bindtap="agreeDevConsent" wx:if="{{!devConsent}}">同意隐私说明并启用</view>
+      <view class="privacy-note">
+        使用开发者提供的 API 意味着：你的记录文本会发送至开发者的云环境，再由其调用 DeepSeek 大模型完成整理提炼。
+        开发者承诺仅将文本用于本次整理，不用于训练或其他用途。可在任意时刻切回「使用我的 DeepSeek Key」。
+      </view>
+    </view>
+  </view>
+
+  <!-- 语音识别 -->
+  <view class="group-title">语音识别</view>
+  <view class="card group">
+    <view class="switch-row">
+      <view class="switch-body">
+        <view class="mode-name">腾讯云 ASR 服务</view>
+        <view class="mode-desc" wx:if="{{asrReady === null}}">检测中…</view>
+        <view class="mode-desc ok" wx:elif="{{asrReady}}">✓ 已配置，按住麦克风即可语音记录</view>
+        <view class="mode-desc warn" wx:else>⚠ 未配置：需在云函数 asr 环境变量填入腾讯云 SecretId/SecretKey（见 README）</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 数据 -->
+  <view class="group-title">数据</view>
+  <view class="card group">
+    <view class="row danger" bindtap="clearAll">清空全部记录（不可恢复）</view>
+  </view>
+
+  <view class="about">
+    <view class="about-title">Thought Clip · 记录即复利</view>
+    <view class="about-desc">数据存储于你自己的微信云开发环境（entries / users 集合），按用户隔离。</view>
+  </view>
+
+</view>

@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "历史记录",
+  "usingComponents": {
+    "entry-card": "/components/entry-card/entry-card"
+  }
+}
