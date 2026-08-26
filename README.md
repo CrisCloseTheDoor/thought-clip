@@ -14,7 +14,8 @@
 
 ## 界面展示
 
-![界面截图](docs/screenshot.png)
+![界面截图1](docs/界面1.png)
+![界面截图2](docs/界面2.png)
 
 ## 技术架构
 
