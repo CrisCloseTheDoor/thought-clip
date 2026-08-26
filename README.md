@@ -14,7 +14,7 @@
 
 ## 界面展示
 
-![image-20260826112245976](C:\Users\haroy\AppData\Roaming\Typora\typora-user-images\image-20260826112245976.png)
+![界面截图](docs/screenshot.png)
 
 ## 技术架构
 
