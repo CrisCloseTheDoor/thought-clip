@@ -5,13 +5,14 @@
     <view class="header-left">
       <view class="date">{{todayTitle}}</view>
       <view class="streak" wx:if="{{streak > 0}}">
-        <text class="flame">🔥</text> 连续记录 {{streak}} 天
+        <view class="icon-flame"></view>
+        <text>连续记录 {{streak}} 天</text>
       </view>
       <view class="streak muted" wx:else>从今天开始积累你的 context</view>
     </view>
     <view class="header-right">
-      <view class="icon-btn" bindtap="goHistory">🕘</view>
-      <view class="icon-btn" bindtap="goSettings">⚙️</view>
+      <view class="icon-btn" bindtap="goHistory"><view class="icon-clock"></view></view>
+      <view class="icon-btn" bindtap="goSettings"><view class="icon-sliders"></view></view>
     </view>
   </view>
 
@@ -25,26 +26,49 @@
     <view class="review-foot" wx:if="{{review.refined}}">由 AI 生成 · 历史页查看完整记录</view>
   </view>
 
+  <!-- 暂存语音：识别失败临时保留，7 天有效 -->
+  <view class="clips" wx:if="{{clips.length}}">
+    <view class="clips-title">
+      <text>暂存语音</text>
+      <text class="clips-sub">识别未成功的录音 · {{clipsKeepDays}} 天后自动删除</text>
+    </view>
+    <view class="clip" wx:for="{{clips}}" wx:key="id">
+      <view class="clip-play {{playingId === item.id ? 'playing' : ''}}" bindtap="playClip"
+        data-id="{{item.id}}" data-file="{{item.fileID}}"></view>
+      <view class="clip-body" bindtap="playClip" data-id="{{item.id}}" data-file="{{item.fileID}}">
+        <view class="clip-name">录音 · {{item.createdText}}</view>
+        <view class="clip-remain">剩余 {{item.remainDays}} 天 · 可回听 / 识别 / 导出</view>
+      </view>
+      <view class="clip-act" bindtap="reidentifyClip" data-id="{{item.id}}" data-file="{{item.fileID}}">识别</view>
+      <view class="clip-act" bindtap="exportClip" data-file="{{item.fileID}}">导出</view>
+      <view class="clip-act danger" bindtap="deleteClip" data-id="{{item.id}}" data-file="{{item.fileID}}">删除</view>
+    </view>
+  </view>
+
   <!-- 今日概览 -->
   <view class="today-bar">
     <view>今日 <text class="count">{{todayCount}}</text> 条</view>
-    <view class="hint">松手即存 · 碎片也是资产</view>
+    <view class="hint">说完可追加 · 点「完成」才保存</view>
   </view>
 
-  <!-- 舞台区：转写 / 已存卡片 / 空态 -->
+  <!-- 舞台区：录音 / 识别 / 贴纸 / 空态 -->
   <view class="stage">
 
-    <!-- 录音中 -->
-    <view class="transcript" wx:if="{{stage === 'recording'}}">
+    <!-- 录音中（尚无贴纸：首次语音输入） -->
+    <view class="transcript" wx:if="{{stage === 'recording' && !sticker}}">
       <view class="live-head">
         <view class="live-dot"></view>
-        <text>{{recordSeconds >= 60 ? '已达 60s 上限，即将自动保存' : '正在录音 ' + recordSeconds + 's'}}</text>
+        <text wx:if="{{recordSeconds < 52}}">正在录音 {{recordSeconds}}s · 松手结束</text>
+        <text wx:else class="warn-text">{{60 - recordSeconds}}s 后自动结束，注意收尾</text>
       </view>
-      <view class="live-text">{{recordSeconds >= 60 ? '即将自动结束…' : '（松手结束并识别）'}}</view>
+      <view class="wave">
+        <view class="wave-bar" wx:for="{{bars}}" wx:key="k" style="height: {{item.v}}%"></view>
+        <view class="wave-hint" wx:if="{{!bars.length}}">对着它说话试试</view>
+      </view>
     </view>
 
-    <!-- 识别中 -->
-    <view class="transcript" wx:elif="{{stage === 'transcribing'}}">
+    <!-- 识别中（尚无贴纸：首次语音输入） -->
+    <view class="transcript" wx:elif="{{stage === 'transcribing' && !sticker}}">
       <view class="live-head">
         <view class="spin"></view>
         <text>正在识别你的语音…</text>
@@ -52,20 +76,69 @@
       <view class="live-text">稍等片刻</view>
     </view>
 
-    <!-- 已保存卡片 -->
-    <view class="saved" wx:elif="{{savedEntry}}">
-      <view class="saved-head">
-        <view class="saved-badge {{savedEntry.refined ? 'done' : ''}}">
-          {{saving ? '整理中…' : (savedEntry.refined ? '✓ 已整理' : '已暂存')}}
+    <!-- 贴纸（未确认草稿） -->
+    <view class="sticker" wx:elif="{{sticker}}">
+      <view class="sticker-head">
+        <text class="sticker-badge">新贴纸</text>
+        <text class="sticker-count" wx:if="{{sticker.segments.length}}">{{sticker.segments.length}} 段 · 点击确认以保存</text>
+        <text class="sticker-count" wx:else>说一段或写一句，开始这条贴纸</text>
+      </view>
+
+      <view class="segs" wx:if="{{sticker.segments.length}}">
+        <view class="seg {{draggingId === item.id ? 'dragging' : ''}}"
+          wx:for="{{sticker.segments}}" wx:key="id"
+          style="{{draggingId === item.id ? 'transform: translateY(' + dragDy + 'px);' : ''}}"
+          bindlongpress="onSegDragStart"
+          catchtouchmove="{{draggingId === item.id ? 'onSegDragMove' : ''}}"
+          bindtouchend="onSegDragEnd"
+          bindtouchcancel="onSegDragEnd"
+          data-id="{{item.id}}">
+          <view class="seg-src {{item.source}}">{{item.source === 'voice' ? '说' : '写'}}</view>
+          <view class="seg-main" bindtap="editSegment" data-id="{{item.id}}">
+            <text class="seg-text">{{item.text}}</text>
+            <text class="seg-pending" wx:if="{{item.pending}}">整理中…</text>
+            <text class="seg-edit-hint" wx:else>轻点可修改 · 长按拖动排序</text>
+          </view>
+          <view class="seg-del" catchtap="removeSegment" data-id="{{item.id}}">✕</view>
         </view>
       </view>
-      <view class="saved-text">{{savedEntry.text}}</view>
-      <view class="saved-meta" wx:if="{{savedEntry.refined}}">
-        <text class="chip type-chip" style="color: {{savedEntry.typeColor}};">{{savedEntry.typeLabel}}</text>
-        <text class="chip" wx:for="{{savedEntry.keywords}}" wx:key="*this">#{{item}}</text>
+
+      <!-- 段内录音 / 识别状态 -->
+      <view class="rec-strip" wx:if="{{stage === 'recording'}}">
+        <view class="rec-head">
+          <view class="live-dot"></view>
+          <text wx:if="{{recordSeconds < 52}}">正在录音 {{recordSeconds}}s · 松手结束</text>
+          <text wx:else class="warn-text">{{60 - recordSeconds}}s 后自动结束，注意收尾</text>
+        </view>
+        <view class="wave small">
+          <view class="wave-bar" wx:for="{{bars}}" wx:key="k" style="height: {{item.v}}%"></view>
+        </view>
       </view>
-      <view class="saved-actions">
-        <view class="ghost-btn" bindtap="deleteLast">删除这条</view>
+      <view class="rec-strip" wx:elif="{{stage === 'transcribing'}}">
+        <view class="rec-head">
+          <view class="spin"></view>
+          <text>正在识别你的语音…</text>
+        </view>
+      </view>
+
+      <!-- 输入行：打字 + 小麦克风（按住说话） -->
+      <view class="sticker-compose">
+        <input class="compose-input" value="{{typedDraft}}" placeholder="想到什么再补一句…" placeholder-class="compose-ph"
+          confirm-type="done" bindinput="onTypedInput" bindconfirm="addTyped" focus="{{stickerFocus}}" />
+        <view class="compose-mic {{stage === 'recording' ? 'recording' : ''}}"
+          bindtouchstart="onRecordStart" bindtouchend="onRecordStop" bindtouchcancel="onRecordStop">
+          <view class="compose-mic-icon"></view>
+        </view>
+        <view class="compose-add" bindtap="addTyped">添加</view>
+      </view>
+
+      <view class="sticker-actions">
+        <view class="ghost-btn" bindtap="discardSticker">丢弃</view>
+        <view class="inspire-btn" wx:if="{{sticker.segments.length === 1 && sticker.segments[0].source === 'voice' && sticker.segments[0].fileID && sticker.segments[0].amps}}"
+          bindtap="convertToInspiration">♪ 存为声音灵感</view>
+        <view class="done-btn {{saving || !sticker.segments.length ? 'off' : ''}}" bindtap="confirmSticker">
+          {{saving ? '保存中…' : '完成贴纸 ✓'}}
+        </view>
       </view>
     </view>
 
@@ -76,14 +149,15 @@
     </view>
   </view>
 
-  <!-- 麦克风 -->
-  <view class="mic-area">
+  <!-- 麦克风 + 打字入口（贴纸出现后隐藏，输入统一在贴纸内进行） -->
+  <view class="mic-area" wx:if="{{!sticker}}">
     <mic-button
       recording="{{stage === 'recording'}}"
       disabled="{{stage === 'transcribing'}}"
       bind:recordstart="onRecordStart"
       bind:recordstop="onRecordStop"
     />
+    <view class="type-entry" bindtap="openTyping">打字</view>
   </view>
 
   <!-- 今日时间线 -->
@@ -100,5 +174,8 @@
     />
   </view>
   <view class="empty" wx:else>今天还没有记录，按住下方按钮，说出第一段。</view>
+
+  <!-- 隐私说明 -->
+  <view class="privacy-line">你的记录按微信账号隔离存储，仅你本人可见，其他用户无法读取；原文模式下数据不经过任何第三方。</view>
 
 </view>

@@ -10,6 +10,12 @@ project.private.config.json
 
 # 需求沟通记录（内部工作文档，默认不公开）
 初步沟通.md
+新点子.txt
+
+# 本地素材与草稿（界面截图源文件、演示稿）
+截图*.png
+截图*.jpg
+画图.pptx
 
 # 系统与编辑器
 .DS_Store

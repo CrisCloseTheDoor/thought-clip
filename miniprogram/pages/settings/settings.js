@@ -1,4 +1,6 @@
 const config = require('../../config')
+const fmt = require('../../utils/format')
+const stats = require('../../utils/stats')
 
 Page({
   data: {
@@ -8,6 +10,8 @@ Page({
     apiKey: '',
     apiKeyMask: '',
     devConsent: false,
+    // 保留原声：成功识别的录音随记录长期保留，详情页可回听
+    keepVoice: false,
     // 语音识别服务状态（null=未知，true=已配置，false=未配置）
     asrReady: null
   },
@@ -46,7 +50,8 @@ Page({
             apiMode: doc.apiMode || 'none',
             apiKey: doc.apiKey || '',
             apiKeyMask: this._maskKey(doc.apiKey || ''),
-            devConsent: !!doc.devConsent
+            devConsent: !!doc.devConsent,
+            keepVoice: !!doc.keepVoice
           })
         }
         // 未配置时默认「原文记录」模式
@@ -159,7 +164,110 @@ Page({
     })
   },
 
+  /* ---------- 保留原声 ---------- */
+
+  toggleKeepVoice() {
+    const v = !this.data.keepVoice
+    this.setData({ keepVoice: v })
+    this.save({ keepVoice: v })
+    wx.showToast({
+      title: v ? '开：录音随记录保留' : '关：识别后即删除录音',
+      icon: 'none'
+    })
+  },
+
   /* ---------- 数据 ---------- */
+
+  // 导出全部记录为 Markdown 文件，通过聊天分享给自己备份
+  exportAll() {
+    if (this._exporting) return
+    if (!wx.cloud || !wx.cloud.callFunction) return
+    this._exporting = true
+    wx.showLoading({ title: '导出中…', mask: true })
+
+    const CHUNK = 300
+    const parts = []
+    const step = (skip) => wx.cloud.callFunction({
+      name: config.CLOUD_FUNCTIONS.STATS,
+      data: { action: 'export', skip, limit: CHUNK }
+    }).then((res) => {
+      const r = res.result || {}
+      parts.push(r.markdown || '')
+      if (r.hasMore) return step(skip + CHUNK)
+      return parts.join('\n')
+    })
+
+    const today = fmt.dayKey(new Date())
+    const stamp = today.replace(/-/g, '')
+    step(0).then((md) => {
+      wx.hideLoading()
+      this._exporting = false
+      if (!md || !md.trim()) {
+        wx.showToast({ title: '还没有可导出的记录', icon: 'none' })
+        return
+      }
+      const content = '# Thought Clip 导出 · ' + today + '\n' + md + '\n'
+
+      const write = (filePath) => new Promise((resolve, reject) => {
+        wx.getFileSystemManager().writeFile({
+          filePath,
+          data: content,
+          encoding: 'utf8',
+          success: resolve,
+          fail: reject
+        })
+      })
+      const share = (filePath, fileName) => new Promise((resolve, reject) => {
+        wx.shareFileMessage({
+          filePath,
+          fileName,
+          success: resolve,
+          fail: (f) => {
+            if (f && f.errMsg && f.errMsg.indexOf('cancel') > -1) resolve('cancel')
+            else reject(f)
+          }
+        })
+      })
+      const tryShare = (ext, fileName) => {
+        const path = wx.env.USER_DATA_PATH + '/thought-clip-' + stamp + '.' + ext
+        return write(path).then(() => share(path, fileName))
+      }
+
+      const run = async () => {
+        // 优先发 .md 文件；部分机型不支持该扩展名时改发 .txt；均失败再复制剪贴板
+        try {
+          const r = await tryShare('md', 'ThoughtClip-' + today + '.md')
+          if (r !== 'cancel') wx.showToast({ title: '已导出', icon: 'success' })
+          return
+        } catch (e) {
+          console.warn('md 分享失败，尝试 txt', e && e.errMsg)
+        }
+        try {
+          const r = await tryShare('txt', 'ThoughtClip-' + today + '.txt')
+          if (r !== 'cancel') wx.showToast({ title: '已导出', icon: 'success' })
+          return
+        } catch (e) {
+          console.warn('txt 分享失败，退化剪贴板', e && e.errMsg)
+        }
+        if (content.length < 80000) {
+          wx.setClipboardData({
+            data: content,
+            success: () => {
+              wx.hideToast() // 屏蔽系统默认的「内容已复制」
+              wx.showToast({ title: '记录已复制到剪贴板', icon: 'none', duration: 2500 })
+            }
+          })
+        } else {
+          wx.showToast({ title: '请在手机微信中导出', icon: 'none', duration: 2200 })
+        }
+      }
+      run()
+    }).catch(() => {
+      wx.hideLoading()
+      this._exporting = false
+      wx.showToast({ title: '导出失败，请检查网络', icon: 'none' })
+    })
+  },
 
   clearAll() {
     wx.showModal({
@@ -175,6 +283,7 @@ Page({
             .then((res) => {
               const list = res.data || []
               if (!list.length) {
+                stats.invalidate()
                 wx.showToast({ title: '已清空', icon: 'success' })
                 return
               }

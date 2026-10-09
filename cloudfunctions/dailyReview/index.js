@@ -43,9 +43,10 @@ function postJson(url, headers, body) {
   })
 }
 
+// 东八区日期键：不依赖云函数容器本地时区（客户端通常会显式传 dayKey，此处为兜底）
 function dayKeyOf(d) {
   const p = (n) => (n < 10 ? '0' + n : '' + n)
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate())
 }
 
 // 与 saveEntry 一致的严格 Key 解析：只有 dev+已同意才用开发者 Key
@@ -111,9 +112,8 @@ function statsSummary(entries) {
 
 exports.main = async (event) => {
   const { OPENID } = cloud.getWXContext()
-  const d = new Date()
-  d.setDate(d.getDate() - 1) // 默认昨日
-  const dayKey = event.dayKey || dayKeyOf(d)
+  // 默认昨日（东八区）；容器时区不确定，用 +8h 后的 UTC 分量计算
+  const dayKey = event.dayKey || dayKeyOf(new Date(Date.now() + 8 * 3600 * 1000 - 86400000))
 
   const entryRes = await db.collection('entries')
     .where({ _openid: OPENID, dayKey })

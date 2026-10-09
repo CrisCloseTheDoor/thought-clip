@@ -2,6 +2,117 @@
   padding-top: 12rpx;
 }
 
+/* 统计卡 */
+.stats-card {
+  background: var(--card);
+  border-radius: 24rpx;
+  padding: 26rpx 28rpx 20rpx;
+  margin-bottom: 24rpx;
+}
+.stats-row {
+  display: flex;
+}
+.stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.stat-num {
+  font-size: 40rpx;
+  font-weight: 700;
+  color: var(--gold);
+}
+.stat-label {
+  font-size: 22rpx;
+  color: var(--text-faint);
+  margin-top: 6rpx;
+}
+
+/* 热力图：列平分卡片宽度，格子随屏幕自适应 */
+.heat {
+  display: flex;
+  margin-top: 24rpx;
+  overflow: hidden;
+}
+.heat-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  margin-right: 10rpx;
+}
+.heat-col:last-child {
+  margin-right: 0;
+}
+.heat-cell {
+  width: 100%;
+  height: 24rpx;
+  border-radius: 5rpx;
+  margin-bottom: 10rpx;
+  background: rgba(232, 180, 75, 0.07);
+}
+.heat-cell.blank {
+  background: transparent;
+}
+.heat-cell.lv-1 { background: rgba(232, 180, 75, 0.28); }
+.heat-cell.lv-2 { background: rgba(232, 180, 75, 0.55); }
+.heat-cell.lv-3 { background: var(--gold); }
+.heat-legend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 12rpx;
+  font-size: 20rpx;
+  color: var(--text-faint);
+}
+.heat-legend .heat-cell {
+  width: 14rpx;
+  height: 14rpx;
+  margin: 0 4rpx 0 8rpx;
+}
+
+/* 搜索 + 类型筛选 */
+.search-bar {
+  margin-bottom: 24rpx;
+}
+.search-box {
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border-radius: 999rpx;
+  padding: 6rpx 24rpx;
+}
+.search-input {
+  flex: 1;
+  font-size: 26rpx;
+  min-height: 68rpx;
+}
+.search-ph {
+  color: var(--text-faint);
+}
+.search-clear {
+  color: var(--text-faint);
+  font-size: 26rpx;
+  padding: 10rpx 4rpx 10rpx 20rpx;
+}
+.type-chips {
+  display: flex;
+  margin-top: 16rpx;
+}
+.tchip {
+  font-size: 24rpx;
+  color: var(--text-dim);
+  background: var(--card);
+  border-radius: 999rpx;
+  padding: 10rpx 28rpx;
+  margin-right: 16rpx;
+}
+.tchip.on {
+  color: #14161A;
+  font-weight: 600;
+  background: var(--gold);
+}
+
 .day-group {
   margin-bottom: 30rpx;
 }

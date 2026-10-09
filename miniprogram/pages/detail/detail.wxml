@@ -1,5 +1,36 @@
 <view class="page detail-page" wx:if="{{entry}}">
 
+  <!-- 声音灵感视图 -->
+  <block wx:if="{{isVoice}}">
+    <view class="card detail-head">
+      <view class="type-row">
+        <view class="v-kind">♪ 声音灵感</view>
+        <text class="time">{{entry.timeText}}</text>
+      </view>
+      <view class="v-big-title" bindtap="renameInspire">
+        <text>{{entry.title || '声音灵感'}}</text>
+        <text class="v-rename-hint">轻点重命名</text>
+      </view>
+      <view class="v-amps {{voicePlaying ? 'playing' : ''}}">
+        <view class="v-amp-bar" wx:for="{{entry.ampsView}}" wx:key="index"
+          style="height: {{item.v}}%; animation-delay: {{item.d}}s"></view>
+      </view>
+      <view class="v-ctrl">
+        <view class="v-play-big {{voicePlaying ? 'playing' : ''}}" bindtap="toggleVoicePlay"></view>
+        <text class="v-dur-text">{{voicePlaying ? '正在播放' : '点击回听'}}{{entry.duration ? ' · ' + entry.duration + 's' : ''}}</text>
+      </view>
+    </view>
+
+    <view class="action-row">
+      <view class="action" bindtap="renameInspire">重命名</view>
+      <view class="action" bindtap="exportInspireAudio">导出音频</view>
+      <view class="action danger" bindtap="deleteEntry">删除</view>
+    </view>
+  </block>
+
+  <!-- 普通记录视图 -->
+  <block wx:else>
+
   <!-- 主卡片 -->
   <view class="card detail-head">
     <view class="type-row">
@@ -32,6 +63,17 @@
     </block>
   </view>
 
+  <!-- 保留的原声 -->
+  <view class="card voice-card" wx:if="{{voices.length}}">
+    <view class="voice-title">原声</view>
+    <view class="voice-row {{playingVoice === item.fileID ? 'playing' : ''}}" wx:for="{{voices}}"
+      wx:key="fileID" bindtap="playVoice" data-file="{{item.fileID}}">
+      <view class="voice-play"></view>
+      <text class="voice-label">{{item.label}}</text>
+      <text class="voice-state">{{playingVoice === item.fileID ? '正在播放' : '点击回听'}}</text>
+    </view>
+  </view>
+
   <!-- 原始转写对比 -->
   <view class="card raw-card" wx:if="{{entry.raw && entry.raw !== entry.text}}">
     <view class="raw-head" bindtap="toggleRaw">
@@ -47,5 +89,6 @@
     <view class="action" bindtap="startEdit" wx:if="{{!editing}}">编辑</view>
     <view class="action danger" bindtap="deleteEntry">删除</view>
   </view>
+  </block>
 
 </view>

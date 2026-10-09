@@ -62,6 +62,21 @@
     </view>
   </view>
 
+  <!-- 录音 -->
+  <view class="group-title">录音</view>
+  <view class="card group">
+    <view class="switch-row">
+      <view class="switch-body">
+        <view class="mode-name">保留原声</view>
+        <view class="mode-desc">开启后，成功识别的录音会随记录一起保留，可在记录详情页回听；关闭则识别完成即删除录音，只留文字。识别失败进入「暂存语音」的录音不受此开关影响（7 天自动删除）。</view>
+        <view class="mode-desc">注意：原声为 wav 格式，约 0.3MB/10 秒。</view>
+      </view>
+      <view class="toggle {{keepVoice ? 'on' : ''}}" bindtap="toggleKeepVoice">
+        <view class="toggle-knob"></view>
+      </view>
+    </view>
+  </view>
+
   <!-- 语音识别 -->
   <view class="group-title">语音识别</view>
   <view class="card group">
@@ -78,12 +93,14 @@
   <!-- 数据 -->
   <view class="group-title">数据</view>
   <view class="card group">
+    <view class="row" bindtap="exportAll">导出全部记录（Markdown）</view>
+    <view class="export-note">生成按天整理的 Markdown 文件（含类型、关键词与原文），通过聊天发送给自己，随时可迁移备份。</view>
     <view class="row danger" bindtap="clearAll">清空全部记录（不可恢复）</view>
   </view>
 
   <view class="about">
     <view class="about-title">Thought Clip · 记录即复利</view>
-    <view class="about-desc">数据存储于你自己的微信云开发环境（entries / users 集合），按用户隔离。</view>
+    <view class="about-desc">数据存储于你自己的微信云开发环境（entries / users / voiceClips 集合），按微信账号严格隔离，其他使用者无法访问你的任何记录。</view>
   </view>
 
 </view>

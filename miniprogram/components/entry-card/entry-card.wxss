@@ -19,6 +19,102 @@
   width: 8rpx;
 }
 
+/* ---- 声音灵感变体 ---- */
+.type-bar.music {
+  background: var(--teal);
+}
+.v-head {
+  display: flex;
+  align-items: center;
+}
+.v-badge {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  color: var(--teal);
+  background: rgba(79, 209, 197, 0.12);
+  border-radius: 8rpx;
+  width: 40rpx;
+  height: 40rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 14rpx;
+}
+.v-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.v-dur {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  font-size: 22rpx;
+  color: var(--text-faint);
+}
+.v-row {
+  display: flex;
+  align-items: center;
+  margin-top: 20rpx;
+}
+.v-bars {
+  flex: 1;
+  min-width: 0;
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  gap: 4rpx;
+  overflow: hidden;
+}
+.v-bar {
+  flex: 1;
+  min-height: 6rpx;
+  max-width: 14rpx;
+  border-radius: 3rpx;
+  background: rgba(79, 209, 197, 0.65);
+}
+/* 播放中：柱子按 8 根一循环错峰起伏，均衡器式动效 */
+.v-bars.playing .v-bar {
+  animation: vbarWave 0.8s ease-in-out infinite alternate;
+}
+@keyframes vbarWave {
+  from { transform: scaleY(1); }
+  to { transform: scaleY(0.5); }
+}
+.v-play {
+  position: relative;
+  flex-shrink: 0;
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+  background: rgba(79, 209, 197, 0.14);
+  border: 1rpx solid rgba(79, 209, 197, 0.45);
+  margin-left: 20rpx;
+}
+.v-play::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-40%, -50%); /* 三角形光学居中：略右偏 */
+  border-left: 16rpx solid var(--teal);
+  border-top: 11rpx solid transparent;
+  border-bottom: 11rpx solid transparent;
+}
+.v-play.playing::after {
+  transform: translate(-50%, -50%);
+  width: 6rpx;
+  height: 22rpx;
+  border-left: 6rpx solid var(--teal);
+  border-right: 6rpx solid var(--teal);
+  border-top: none;
+  border-bottom: none;
+  box-sizing: content-box;
+}
+
 .text {
   font-size: 30rpx;
   line-height: 1.65;
@@ -43,6 +139,12 @@
 
 .type-chip {
   background: rgba(255, 255, 255, 0.06);
+}
+
+/* 关键词标签可点击触发搜索 */
+.kw-chip:active {
+  background: rgba(232, 180, 75, 0.15);
+  color: var(--gold);
 }
 
 .time {

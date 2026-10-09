@@ -21,6 +21,14 @@ App({
       traceUser: true
     })
     this.globalData.cloudReady = true
+
+    // 网络恢复时自动补传离线记录（app.onShow 只覆盖「离开再回来」的场景）
+    wx.onNetworkStatusChange((res) => {
+      if (!res.isConnected || !this.globalData.cloudReady) return
+      flushPendingQueue().then((n) => {
+        if (n > 0) wx.showToast({ title: '已同步 ' + n + ' 条离线记录', icon: 'none' })
+      }).catch(() => {})
+    })
   },
 
   onShow() {

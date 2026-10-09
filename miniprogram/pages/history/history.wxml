@@ -2,6 +2,51 @@
 
   <view class="page-title">历史记录</view>
 
+  <!-- 统计 + 热力图 -->
+  <view class="stats-card" wx:if="{{total !== null}}">
+    <view class="stats-row">
+      <view class="stat">
+        <text class="stat-num">{{total}}</text>
+        <text class="stat-label">累计记录</text>
+      </view>
+      <view class="stat">
+        <text class="stat-num">{{streak}}</text>
+        <text class="stat-label">连续天数</text>
+      </view>
+      <view class="stat">
+        <text class="stat-num">{{longestStreak}}</text>
+        <text class="stat-label">最长连续</text>
+      </view>
+    </view>
+    <view class="heat" wx:if="{{heatColumns.length}}">
+      <view class="heat-col" wx:for="{{heatColumns}}" wx:key="key" wx:for-item="col">
+        <view wx:for="{{col.cells}}" wx:key="key" wx:for-item="cell"
+          class="heat-cell {{cell.blank ? 'blank' : 'lv-' + cell.level}}"></view>
+      </view>
+    </view>
+    <view class="heat-legend">
+      <text>少言无事</text>
+      <view class="heat-cell lv-0"></view>
+      <view class="heat-cell lv-1"></view>
+      <view class="heat-cell lv-2"></view>
+      <view class="heat-cell lv-3"></view>
+      <text>侃侃而谈</text>
+    </view>
+  </view>
+
+  <!-- 搜索 + 类型筛选 -->
+  <view class="search-bar">
+    <view class="search-box">
+      <input class="search-input" value="{{kw}}" placeholder="搜索内容或关键词" placeholder-class="search-ph"
+        confirm-type="search" bindinput="onSearchInput" bindconfirm="onSearchConfirm" />
+      <text class="search-clear" wx:if="{{kw}}" bindtap="clearSearch">✕</text>
+    </view>
+    <view class="type-chips">
+      <view class="tchip {{type === item.value ? 'on' : ''}}" wx:for="{{types}}" wx:key="value"
+        bindtap="onTypeTap" data-value="{{item.value}}">{{item.label}}</view>
+    </view>
+  </view>
+
   <view class="day-group" wx:for="{{groups}}" wx:key="dayKey" wx:for-item="group">
     <view class="day-head">{{group.label}} · {{group.items.length}} 条</view>
     <entry-card
@@ -9,10 +54,11 @@
       wx:key="_id"
       entry="{{item}}"
       bind:tapentry="goDetail"
+      bind:tapkeyword="onKeywordTap"
     />
   </view>
 
-  <view class="empty" wx:if="{{!groups.length && !loading}}">还没有记录，去「记录」页按住按钮说点什么吧。</view>
+  <view class="empty" wx:if="{{!groups.length && !loading}}">{{kw || type ? '没有匹配的记录，换个关键词试试。' : '还没有记录，去「记录」页按住按钮说点什么吧。'}}</view>
 
   <view class="load-state" wx:if="{{groups.length}}">{{finished ? '— 到底啦 —' : (loading ? '加载中…' : '上滑加载更多')}}</view>
 

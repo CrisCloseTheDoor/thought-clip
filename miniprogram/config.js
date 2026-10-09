@@ -10,6 +10,7 @@ module.exports = {
   CLOUD_FUNCTIONS: {
     SAVE_ENTRY: 'saveEntry',
     ASR: 'asr',
-    DAILY_REVIEW: 'dailyReview'
+    DAILY_REVIEW: 'dailyReview',
+    STATS: 'stats'
   }
 }

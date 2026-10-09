@@ -1,14 +1,37 @@
-<view class="entry-card" bindtap="onTap">
-  <view class="type-bar" style="background: {{typeColor}};"></view>
-  <view class="body">
-    <view class="text">{{entry.text}}</view>
-
-    <view class="raw" wx:if="{{showRaw && entry.raw && entry.raw !== entry.text}}">{{entry.raw}}</view>
-
-    <view class="meta">
-      <text class="chip type-chip" style="color: {{typeColor}};">{{typeLabel}}</text>
-      <text class="chip" wx:for="{{entry.keywords}}" wx:key="*this">#{{item}}</text>
-      <text class="time" wx:if="{{!compact}}">{{timeText}}</text>
+<view class="entry-card {{entry.kind === 'voice' ? 'voice-card' : ''}}" bindtap="onTap">
+  <!-- 声音灵感变体：标题 + 量化幅度 + 内联回听 -->
+  <block wx:if="{{entry.kind === 'voice'}}">
+    <view class="type-bar music"></view>
+    <view class="body">
+      <view class="v-head">
+        <view class="v-badge">♪</view>
+        <text class="v-title">{{entry.title || '声音灵感'}}</text>
+        <text class="v-dur" wx:if="{{entry.duration}}">{{entry.duration}}s</text>
+      </view>
+      <view class="v-row">
+        <view class="v-bars {{playing ? 'playing' : ''}}">
+          <view class="v-bar" wx:for="{{ampsView}}" wx:key="index"
+            style="height: {{item.v}}%; animation-delay: {{item.d}}s"></view>
+        </view>
+        <view class="v-play {{playing ? 'playing' : ''}}" catchtap="onPlayTap"></view>
+      </view>
     </view>
-  </view>
+  </block>
+
+  <!-- 普通记录 -->
+  <block wx:else>
+    <view class="type-bar" style="background: {{typeColor}};"></view>
+    <view class="body">
+      <view class="text">{{entry.text}}</view>
+
+      <view class="raw" wx:if="{{showRaw && entry.raw && entry.raw !== entry.text}}">{{entry.raw}}</view>
+
+      <view class="meta">
+        <text class="chip type-chip" style="color: {{typeColor}};">{{typeLabel}}</text>
+        <text class="chip kw-chip" wx:for="{{entry.keywords}}" wx:key="*this"
+          catchtap="onKeyword" data-keyword="{{item}}">#{{item}}</text>
+        <text class="time" wx:if="{{!compact}}">{{timeText}}</text>
+      </view>
+    </view>
+  </block>
 </view>

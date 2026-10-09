@@ -26,8 +26,9 @@
 }
 
 .mic-icon {
-  font-size: 70rpx;
-  line-height: 1;
+  width: 64rpx;
+  height: 64rpx;
+  background: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjMTQxNjFBIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48cmVjdCB4PSI5IiB5PSIyLjgiIHdpZHRoPSI2IiBoZWlnaHQ9IjExIiByeD0iMyIvPjxwYXRoIGQ9Ik01LjUgMTEuNWE2LjUgNi41IDAgMCAwIDEzIDBNMTIgMTh2My4yIi8+PC9zdmc+") no-repeat center / contain;
 }
 
 .mic-tip {

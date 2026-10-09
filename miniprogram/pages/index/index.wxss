@@ -20,11 +20,29 @@
   margin-top: 10rpx;
   font-size: 24rpx;
   color: var(--gold);
+  display: flex;
+  align-items: center;
 }
 .streak.muted {
   color: var(--text-faint);
 }
-.flame { margin-right: 4rpx; }
+/* 自绘图标（内嵌 SVG，苹果式细线条） */
+.icon-flame {
+  width: 24rpx;
+  height: 24rpx;
+  margin-right: 8rpx;
+  background: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZmlsbD0iI0U4QjQ0QiIgZD0iTTEyIDNjMCAwIDUgNSA1IDEwYTUgNSAwIDAgMS0xMCAwQzcgOCAxMiAzIDEyIDN6Ii8+PC9zdmc+") no-repeat center / contain;
+}
+.icon-clock {
+  width: 34rpx;
+  height: 34rpx;
+  background: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOUJBMEFCIiBzdHJva2Utd2lkdGg9IjEuNyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI4LjYiLz48cGF0aCBkPSJNMTIgNy42VjEybDMuMiAxLjkiLz48L3N2Zz4=") no-repeat center / contain;
+}
+.icon-sliders {
+  width: 34rpx;
+  height: 34rpx;
+  background: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjOUJBMEFCIiBzdHJva2Utd2lkdGg9IjEuNyIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48cGF0aCBkPSJNNCA3aDcuNE0xNS42IDdIMjBNNCAxN2gzLjRNMTEuNiAxN0gyMCIvPjxjaXJjbGUgY3g9IjEzLjUiIGN5PSI3IiByPSIyLjEiLz48Y2lyY2xlIGN4PSI5LjUiIGN5PSIxNyIgcj0iMi4xIi8+PC9zdmc+") no-repeat center / contain;
+}
 
 .header-right {
   display: flex;
@@ -39,7 +57,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32rpx;
+}
+.icon-btn:active {
+  background: var(--card-2);
 }
 
 /* 昨日复盘卡片 */
@@ -133,6 +153,9 @@
   color: var(--gold);
   margin-bottom: 16rpx;
 }
+.warn-text {
+  color: var(--danger);
+}
 .live-dot {
   width: 16rpx;
   height: 16rpx;
@@ -164,12 +187,113 @@
   min-height: 120rpx;
 }
 
-/* 已保存卡片 */
-.saved {
+/* 实时波形 */
+.wave {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  height: 140rpx;
+}
+.wave-bar {
+  width: 8rpx;
+  min-height: 8rpx;
+  border-radius: 6rpx;
+  background: var(--gold);
+  opacity: 0.85;
+  transition: height 0.12s ease-out;
+}
+.wave-hint {
+  font-size: 24rpx;
+  color: var(--text-faint);
+}
+
+/* 暂存语音 */
+.clips {
+  margin: 8rpx 0 20rpx;
+}
+.clips-title {
+  display: flex;
+  align-items: baseline;
+  font-size: 26rpx;
+  font-weight: 600;
+  color: var(--text-dim);
+  padding: 8rpx 6rpx 14rpx;
+}
+.clips-sub {
+  margin-left: 14rpx;
+  font-size: 22rpx;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.clip {
+  display: flex;
+  align-items: center;
+  background: var(--card);
+  border-radius: 18rpx;
+  padding: 18rpx 22rpx;
+  margin-bottom: 14rpx;
+}
+.clip-play {
+  position: relative;
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: rgba(232, 180, 75, 0.16);
+  border: 1rpx solid rgba(232, 180, 75, 0.4);
+  flex-shrink: 0;
+}
+/* 播放三角 / 暂停双杠（translate 居中，规避 rpx 取整偏移） */
+.clip-play::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-40%, -50%); /* 三角形光学居中：略右偏 */
+  border-left: 18rpx solid var(--gold);
+  border-top: 12rpx solid transparent;
+  border-bottom: 12rpx solid transparent;
+}
+.clip-play.playing::after {
+  transform: translate(-50%, -50%);
+  width: 6rpx;
+  height: 24rpx;
+  border-left: 6rpx solid var(--gold);
+  border-right: 6rpx solid var(--gold);
+  border-top: none;
+  border-bottom: none;
+  box-sizing: content-box;
+}
+.clip-body {
+  flex: 1;
+  min-width: 0;
+  margin: 0 16rpx;
+}
+.clip-name {
+  font-size: 26rpx;
+}
+.clip-remain {
+  font-size: 22rpx;
+  color: var(--text-faint);
+  margin-top: 6rpx;
+}
+.clip-act {
+  font-size: 24rpx;
+  color: var(--gold);
+  padding: 10rpx 12rpx;
+  flex-shrink: 0;
+}
+.clip-act.danger {
+  color: var(--danger);
+}
+
+/* 贴纸（未确认草稿） */
+.sticker {
   width: 100%;
   background: var(--card);
+  border: 1rpx dashed rgba(232, 180, 75, 0.35);
   border-radius: 24rpx;
-  padding: 26rpx 30rpx 20rpx;
+  padding: 24rpx 28rpx;
   box-sizing: border-box;
   animation: fadeUp 0.3s ease;
 }
@@ -177,46 +301,240 @@
   from { opacity: 0; transform: translateY(16rpx); }
   to { opacity: 1; transform: translateY(0); }
 }
-.saved-head { margin-bottom: 12rpx; }
-.saved-badge {
-  display: inline-block;
-  font-size: 22rpx;
-  color: var(--text-faint);
-  padding: 4rpx 18rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.06);
-}
-.saved-badge.done {
-  color: var(--gold);
-  background: rgba(232, 180, 75, 0.12);
-}
-.saved-text {
-  font-size: 32rpx;
-  line-height: 1.65;
-}
-.saved-meta {
-  margin-top: 16rpx;
-  display: flex;
-  flex-wrap: wrap;
-}
-.saved-actions {
-  margin-top: 20rpx;
-  text-align: right;
-}
 .ghost-btn {
   display: inline-block;
   font-size: 24rpx;
   color: var(--text-faint);
-  padding: 8rpx 20rpx;
+  padding: 14rpx 30rpx;
   border-radius: 999rpx;
   border: 1rpx solid var(--text-faint);
 }
+.sticker-head {
+  display: flex;
+  align-items: center;
+}
+.sticker-badge {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: var(--gold);
+  background: rgba(232, 180, 75, 0.12);
+  border-radius: 999rpx;
+  padding: 6rpx 18rpx;
+}
+.sticker-count {
+  margin-left: 16rpx;
+  font-size: 22rpx;
+  color: var(--text-faint);
+}
+.segs {
+  margin-top: 18rpx;
+}
+.seg {
+  display: flex;
+  align-items: flex-start;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.05);
+}
+.seg:last-child {
+  border-bottom: none;
+}
+/* 拖拽中的段落：抬起效果（位移由内联 transform 驱动） */
+.seg.dragging {
+  position: relative;
+  z-index: 5;
+  background: var(--card-2);
+  border-radius: 12rpx;
+  box-shadow: 0 14rpx 36rpx rgba(0, 0, 0, 0.5);
+}
+.seg-src {
+  flex-shrink: 0;
+  font-size: 20rpx;
+  font-weight: 600;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 10rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 16rpx;
+  margin-top: 4rpx;
+}
+.seg-src.voice {
+  color: var(--gold);
+  background: rgba(232, 180, 75, 0.12);
+}
+.seg-src.text {
+  color: var(--teal);
+  background: rgba(79, 209, 197, 0.12);
+}
+.seg-main {
+  flex: 1;
+  min-width: 0;
+}
+.seg-text {
+  font-size: 28rpx;
+  line-height: 1.65;
+  word-break: break-word;
+}
+.seg-pending {
+  display: block;
+  font-size: 22rpx;
+  color: var(--gold);
+  margin-top: 6rpx;
+}
+.seg-edit-hint {
+  display: block;
+  font-size: 20rpx;
+  color: var(--text-faint);
+  margin-top: 6rpx;
+}
+.seg-del {
+  flex-shrink: 0;
+  color: var(--text-faint);
+  font-size: 26rpx;
+  padding: 4rpx 8rpx 4rpx 20rpx;
+}
+/* 贴纸内录音 / 识别状态条 */
+.rec-strip {
+  margin-top: 16rpx;
+  background: var(--card-2);
+  border-radius: 14rpx;
+  padding: 16rpx 22rpx;
+}
+.rec-head {
+  display: flex;
+  align-items: center;
+  font-size: 24rpx;
+  color: var(--gold);
+}
+.wave.small {
+  height: 76rpx;
+  margin-top: 12rpx;
+}
+.wave.small .wave-bar {
+  width: 6rpx;
+}
 
-/* 麦克风区域 */
+/* 输入行内的小麦克风：按住说话 */
+.sticker-compose {
+  display: flex;
+  align-items: center;
+  margin-top: 16rpx;
+  background: var(--card-2);
+  border-radius: 14rpx;
+  padding: 8rpx 10rpx 8rpx 22rpx;
+}
+.compose-input {
+  flex: 1;
+  font-size: 26rpx;
+  min-height: 64rpx;
+}
+.compose-ph {
+  color: var(--text-faint);
+}
+.compose-mic {
+  position: relative;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: rgba(232, 180, 75, 0.14);
+  border: 1rpx solid rgba(232, 180, 75, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 16rpx;
+}
+/* CSS 绘制的麦克风造型 → 换为与大按钮一致的自绘 SVG */
+.compose-mic-icon {
+  width: 30rpx;
+  height: 30rpx;
+  background: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRThCNDRCIiBzdHJva2Utd2lkdGg9IjEuOCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj48cmVjdCB4PSI5IiB5PSIyLjgiIHdpZHRoPSI2IiBoZWlnaHQ9IjExIiByeD0iMyIvPjxwYXRoIGQ9Ik01LjUgMTEuNWE2LjUgNi41IDAgMCAwIDEzIDBNMTIgMTh2My4yIi8+PC9zdmc+") no-repeat center / contain;
+}
+/* 录音中：双环向外脉冲 */
+.compose-mic.recording {
+  background: rgba(232, 180, 75, 0.26);
+}
+.compose-mic.recording::before,
+.compose-mic.recording::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 50%;
+  border: 2rpx solid rgba(232, 180, 75, 0.5);
+  animation: ringPulse 1.5s ease-out infinite;
+}
+.compose-mic.recording::after {
+  animation-delay: 0.75s;
+}
+@keyframes ringPulse {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(2); opacity: 0; }
+}
+.compose-add {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  font-weight: 600;
+  color: #14161A;
+  background: var(--gold);
+  border-radius: 10rpx;
+  padding: 10rpx 24rpx;
+  margin-left: 16rpx;
+}
+.sticker-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22rpx;
+}
+/* 转声音灵感（青色，与普通贴纸金色动作区分） */
+.inspire-btn {
+  font-size: 24rpx;
+  font-weight: 600;
+  color: var(--teal);
+  border: 1rpx solid rgba(79, 209, 197, 0.55);
+  background: rgba(79, 209, 197, 0.08);
+  border-radius: 999rpx;
+  padding: 14rpx 28rpx;
+}
+.inspire-btn:active {
+  background: rgba(79, 209, 197, 0.18);
+}
+.done-btn {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #14161A;
+  background: linear-gradient(135deg, #F0C05A, #D89A2B);
+  border-radius: 999rpx;
+  padding: 16rpx 44rpx;
+  box-shadow: 0 8rpx 24rpx rgba(232, 180, 75, 0.3);
+}
+.done-btn.off {
+  opacity: 0.45;
+  box-shadow: none;
+}
+
+/* 麦克风 + 打字入口（纵向：大按钮在上，打字入口在其下方） */
 .mic-area {
   display: flex;
-  justify-content: center;
-  padding: 40rpx 0 56rpx;
+  flex-direction: column;
+  align-items: center;
+  padding: 8rpx 0 56rpx;
+}
+/* 低调的打字入口 */
+.type-entry {
+  font-size: 24rpx;
+  color: var(--text-dim);
+  border: 1rpx solid var(--text-faint);
+  border-radius: 999rpx;
+  padding: 12rpx 32rpx;
+  margin-top: 40rpx;
+}
+.type-entry:active {
+  background: var(--card);
 }
 
 /* 时间线 */
@@ -237,4 +555,15 @@
 }
 .timeline {
   margin-top: 20rpx;
+}
+
+/* 页底隐私小字 */
+.privacy-line {
+  margin-top: 48rpx;
+  padding: 0 30rpx;
+  text-align: center;
+  font-size: 20rpx;
+  line-height: 1.9;
+  color: var(--text-faint);
+  opacity: 0.85;
 }

@@ -2,14 +2,19 @@
  * saveEntry —— AI 整理并保存一条记录
  *
  * 入参：
- *   raw         语音转写原文（必填，除非 test）
- *   test        (可选) true = 仅测试 DeepSeek 连通性，不落库
- *   apiKeyOverride (可选) 测试连接时临时传入的 Key，不落库
+ *   raw             文本（必填，除非 test / kind=voice）
+ *   dayKey          (可选) 客户端本地日期 yyyy-MM-dd。优先使用，避免云函数
+ *                   容器时区不确定导致凌晨记录归错日期；缺省/非法时服务端
+ *                   按东八区显式计算兜底
+ *   audioFileIDs    (可选) 「保留原声」开启时的录音云文件 ID 数组，随记录落库
+ *   kind            (可选) 'voice' = 声音灵感：title/amps/duration 必备，不经 AI
+ *   refineOnly      (可选) true = 仅返回 AI 整理结果，不落库（贴纸逐段整理用）
+ *   test            (可选) true = 仅测试 DeepSeek 连通性，不落库
+ *   apiKeyOverride  (可选) 测试连接时临时传入的 Key，不落库
  *
  * Key 解析（双模式）：
  *   users.apiMode === 'own'  且 apiKey  → 用户自己的 Key
  *   users.apiMode === 'dev'  且 devConsent（已同意隐私说明）→ 环境变量 DEEPSEEK_API_KEY
- *   兜底：环境变量 DEEPSEEK_API_KEY
  *   均无 → 优雅降级，原文保存 refined=false
  */
 const cloud = require('wx-server-sdk')
@@ -90,10 +95,16 @@ function parseResult(content) {
   }
 }
 
-function dayKeyOf(ts) {
-  const d = new Date(ts)
+// 东八区日期键：不依赖云函数容器本地时区
+function dayKeyOfTs(ts) {
+  const d = new Date(ts + 8 * 3600 * 1000)
   const p = (n) => (n < 10 ? '0' + n : '' + n)
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate())
+  return d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate())
+}
+
+// 客户端 dayKey 优先，非法时服务端兜底
+function resolveDayKey(v, ts) {
+  return (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : dayKeyOfTs(ts)
 }
 
 // 双模式 Key 解析
@@ -119,8 +130,46 @@ exports.main = async (event) => {
   const { OPENID } = cloud.getWXContext()
   const raw = typeof event.raw === 'string' ? event.raw.trim() : ''
   const isTest = !!event.test
+  const isRefineOnly = !!event.refineOnly
   const override = typeof event.apiKeyOverride === 'string' && event.apiKeyOverride.trim()
     ? event.apiKeyOverride.trim() : null
+
+  // 声音灵感：单段音频 + 标题 + 量化幅度，不经 AI，音频永久保留
+  if (event.kind === 'voice') {
+    const title = (typeof event.title === 'string' && event.title.trim())
+      ? event.title.trim().slice(0, 30) : ''
+    const amps = Array.isArray(event.amps)
+      ? event.amps.filter((n) => typeof n === 'number' && n >= 0 && n <= 100)
+        .map((n) => Math.round(n)).slice(0, 48)
+      : []
+    const duration = (typeof event.duration === 'number' && event.duration >= 0)
+      ? Math.min(Math.round(event.duration), 600) : 0
+    const audioFileIDs = Array.isArray(event.audioFileIDs)
+      ? event.audioFileIDs.filter((s) => typeof s === 'string' && s.indexOf('cloud://') === 0).slice(0, 20)
+      : []
+
+    const now = new Date()
+    const dayKeyNow = resolveDayKey(event.dayKey, now.getTime())
+    const doc = {
+      _openid: OPENID,
+      kind: 'voice',
+      title: title || dayKeyNow,
+      text: '',
+      raw: '',
+      type: 'fragment',
+      keywords: [],
+      refined: false,
+      amps,
+      duration,
+      dayKey: dayKeyNow,
+      createdAt: now
+    }
+    if (audioFileIDs.length) doc.audioFileIDs = audioFileIDs
+    const addRes = await db.collection('entries').add({ data: doc })
+    doc._id = addRes._id
+    doc.createdAt = now.toISOString()
+    return { entry: doc }
+  }
 
   // 测试连接：不落库
   if (isTest) {
@@ -135,6 +184,22 @@ exports.main = async (event) => {
   }
 
   if (!raw) return { error: 'raw is required' }
+
+  // 仅整理：贴纸里的单段语音清理，不落库
+  if (isRefineOnly) {
+    const apiKey = await resolveKey(OPENID, null)
+    if (!apiKey || raw.length < 8) {
+      return { text: raw, type: 'fragment', keywords: [], refined: false }
+    }
+    try {
+      const content = await callDeepSeek(apiKey, raw, 500)
+      const parsed = parseResult(content)
+      return parsed || { text: raw, type: 'fragment', keywords: [], refined: false }
+    } catch (e) {
+      console.error('refineOnly 整理失败，返回原文', e.message)
+      return { text: raw, type: 'fragment', keywords: [], refined: false }
+    }
+  }
 
   // 默认结果：降级为原文
   let result = { text: raw, type: 'fragment', keywords: [], refined: false }
@@ -152,6 +217,11 @@ exports.main = async (event) => {
     }
   }
 
+  // 「保留原声」：校验并截取云文件 ID（最多 20 段，防止异常数据）
+  const audioFileIDs = Array.isArray(event.audioFileIDs)
+    ? event.audioFileIDs.filter((s) => typeof s === 'string' && s.indexOf('cloud://') === 0).slice(0, 20)
+    : []
+
   // 落库
   const now = new Date()
   const doc = {
@@ -161,9 +231,10 @@ exports.main = async (event) => {
     type: result.type,
     keywords: result.keywords || [],
     refined: result.refined,
-    dayKey: dayKeyOf(now.getTime()),
+    dayKey: resolveDayKey(event.dayKey, now.getTime()),
     createdAt: now
   }
+  if (audioFileIDs.length) doc.audioFileIDs = audioFileIDs
   const addRes = await db.collection('entries').add({ data: doc })
   doc._id = addRes._id
   doc.createdAt = now.toISOString()

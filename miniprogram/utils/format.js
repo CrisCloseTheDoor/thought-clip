@@ -35,6 +35,11 @@ function fullTime(d) {
   return dayKey(d) + ' ' + hm(d)
 }
 
+// 声音灵感默认标题：10月8日 14:32（日期+时刻，同日多条不重名）
+function titleStamp(d) {
+  return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hm(d)
+}
+
 // 把数据库返回的时间转成 Date；兼容 Date / ISO 字符串 / 时间戳 / {$date}
 function toDate(v) {
   if (!v) return new Date()
@@ -46,4 +51,16 @@ function toDate(v) {
   return new Date()
 }
 
-module.exports = { pad, dayKey, friendlyDate, weekday, hm, fullTime, toDate }
+// 转义正则特殊字符（搜索用户输入时使用）
+function escapeRegExp(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// 距过期时间的剩余天数（至少 1，过期返回 0）
+function remainingDays(expiresAt) {
+  const t = toDate(expiresAt).getTime() - Date.now()
+  if (t <= 0) return 0
+  return Math.max(1, Math.ceil(t / 86400000))
+}
+
+module.exports = { pad, dayKey, friendlyDate, weekday, hm, fullTime, titleStamp, toDate, escapeRegExp, remainingDays }
