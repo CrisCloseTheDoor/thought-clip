@@ -23,7 +23,8 @@ Page({
     total: null,
     streak: null,
     longestStreak: null,
-    heatColumns: []
+    heatColumns: [],
+    heatTip: { show: false, key: '', text: '', x: 0, y: 0 }
   },
 
   _page: 0,
@@ -43,11 +44,11 @@ Page({
     if (!this.data.loading && !this.data.finished) this.loadMore()
   },
 
-  // 查询条件：openid + 类型筛选 + 关键词（匹配整理文本 / 原文 / 关键词）
+  // 查询条件：openid + 排除回收站 + 类型筛选 + 关键词（匹配整理文本 / 原文 / 关键词 / 标题）
   _buildWhere() {
     const db = wx.cloud.database()
     const _ = db.command
-    let cond = { _openid: '{openid}' }
+    let cond = { _openid: '{openid}', deletedAt: _.exists(false) }
     if (this.data.type) cond.type = this.data.type
     const kw = (this.data.kw || '').trim()
     if (kw) {
@@ -196,7 +197,47 @@ Page({
       }
     })
     if (col.length) columns.push({ key: 'c' + columns.length, cells: col })
+    // GitHub 式标注：月份变化处的列标月份（10月），行标周一/周三/周五在 wxml 固定
+    columns.forEach((c, i) => {
+      const firstReal = c.cells.find((s) => !s.blank)
+      c.month = firstReal ? parseInt(firstReal.key.slice(5, 7), 10) : 0
+      c.monthLabel = (i > 0 && c.month && c.month !== columns[i - 1].month) ? (c.month + '月') : ''
+    })
     return columns
+  },
+
+  /* ---------- 热力图浮窗 ---------- */
+
+  // 轻点色块：在指尖上方显示「N条 · M月D日」；再点同块或点空白处关闭
+  onHeatTap(e) {
+    const cell = e.currentTarget.dataset
+    const key = cell.key || ''
+    if (key.indexOf('pad') === 0) return // 前置补位空块
+    if (this.data.heatTip.key === key && this.data.heatTip.show) {
+      this.setData({ 'heatTip.show': false, 'heatTip.key': '' })
+      return
+    }
+    const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0])
+    if (!t) return
+    const m = parseInt(key.slice(5, 7), 10)
+    const d = parseInt(key.slice(8, 10), 10)
+    let w = 375
+    try { w = wx.getSystemInfoSync().windowWidth } catch (err) { /* 兜底 */ }
+    const x = Math.min(Math.max(t.clientX, 110), w - 110)
+    const y = Math.max(t.clientY, 90)
+    this.setData({
+      heatTip: {
+        show: true,
+        key,
+        text: (cell.count || 0) + '条 · ' + m + '月' + d + '日',
+        x,
+        y
+      }
+    })
+  },
+
+  clearHeatTip() {
+    if (this.data.heatTip.show) this.setData({ 'heatTip.show': false, 'heatTip.key': '' })
   },
 
   goDetail(e) {

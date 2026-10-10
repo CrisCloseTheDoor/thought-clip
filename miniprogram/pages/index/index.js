@@ -12,6 +12,11 @@ const WAVE_BARS = 28          // 波形条数
 const DRAFT_KEY = 'draftSticker'
 const CLIP_KEEP_DAYS = 7
 
+// 里程碑（即时反馈第二层）：只在首次达成时庆祝一次
+const MILESTONE_KEY = 'shownMilestones'
+const MILESTONE_STREAK = [3, 7, 21, 100]
+const MILESTONE_TOTAL = [10, 50, 100, 500, 1000]
+
 let recorder = null
 function getRecorder() {
   if (recorder) return recorder
@@ -33,6 +38,12 @@ Page({
     sticker: null,            // { rev, segments: [{id, source, text, pending}] }
     stickerFocus: false,
     typedDraft: '',
+    flyOut: false,            // 贴纸保存后的收拢飞出动画
+    // 里程碑庆祝卡（null 不显示）
+    milestone: null,
+    countPop: false,          // 今日计数滚动弹跳
+    flameOn: false,           // 今日第一条落地时的火苗点燃动画
+    landedId: '',             // 刚落袋的记录（时间线首卡高亮）
     // 暂存语音（识别失败临时保留，7 天有效）
     clips: [],
     playingId: '',
@@ -171,7 +182,7 @@ Page({
 
   _startRecord() {
     if (this.data.stage === 'recording' || this.data.stage === 'transcribing' || this.data.saving) return
-    // 未开启 AI（原文记录模式）：首次点录音给一次知情提示，不硬拦截
+    // 未开启 AI（不使用AI 模式）：首次点录音给一次知情提示，不硬拦截
     if (!this._aiEnabled && !wx.getStorageSync('promptedRawMode')) {
       this._promptEnableAi()
       return
@@ -245,7 +256,7 @@ Page({
     wx.cloud.database().collection('users').where({ _openid: '{openid}' }).limit(1).get()
       .then((res) => {
         const doc = res.data && res.data[0]
-        // 只有明确选了 own/dev 才算开启 AI 整理；none / 未配置 → 原文记录
+        // 只有明确选了 own/dev 才算开启 AI 整理；none / 未配置 → 不使用AI
         this._aiEnabled = !!(doc && (doc.apiMode === 'own' || doc.apiMode === 'dev'))
         // 「保留原声」：成功识别的录音随记录长期保留（设置页开关，默认关）
         this._keepVoice = !!(doc && doc.keepVoice)
@@ -255,10 +266,10 @@ Page({
 
   _promptEnableAi() {
     wx.showModal({
-      title: '当前为原文记录模式',
-      content: '尚未开启 AI 整理，记录将以原文保存。开启后 AI 可帮你清理语气词、自动分类、提取关键词。',
+      title: '当前未开启 AI',
+      content: '记录将以原文保存。开启后可自动清理语气词、分类、提取关键词，并可在详情页获取 AI 反馈。',
       confirmText: '去开启',
-      cancelText: '仍然原文',
+      cancelText: '暂不使用',
       confirmColor: '#E8B44B',
       success: (r) => {
         wx.setStorageSync('promptedRawMode', true) // 只提示一次
@@ -627,11 +638,9 @@ Page({
       data: { raw: combined, dayKey, audioFileIDs }
     }).then((res) => {
       this.setData({ saving: false })
-      this._vibrate('medium')
-      wx.showToast({ title: '已保存', icon: 'success' })
-      this._clearSticker()
+      const prevCount = this.data.todayCount
       stats.invalidate() // 今日统计/连续天数已变化
-      this.refreshToday()
+      this._saveDone(prevCount)
     }).catch((err) => {
       this.setData({ saving: false })
       console.warn('saveEntry 调用失败，已入离线队列', err)
@@ -699,11 +708,9 @@ Page({
       }
     }).then(() => {
       this.setData({ saving: false })
-      this._vibrate('medium')
-      wx.showToast({ title: '已存为声音灵感 ♪', icon: 'none' })
-      this._clearSticker() // 音频已归记录所有，仅清草稿，不删音频
+      const prevCount = this.data.todayCount
       stats.invalidate()
-      this.refreshToday()
+      this._saveDone(prevCount) // 音频已归记录所有，仅清草稿，不删音频
     }).catch((err) => {
       this.setData({ saving: false })
       console.warn('声音灵感保存失败，已入离线队列', err)
@@ -714,6 +721,86 @@ Page({
       wx.showToast({ title: '已暂存本机，联网后自动同步', icon: 'none', duration: 2500 })
       this._clearSticker()
     })
+  },
+
+  /* ---------- 即时反馈：存入 juice + 里程碑庆祝 ---------- */
+
+  // 保存成功后的落袋动效：贴纸收拢飞出 → 计数滚动/火苗点燃/首卡高亮 → 里程碑检查
+  _saveDone(prevCount) {
+    this._vibrate('medium')
+    this.setData({ flyOut: true })
+    setTimeout(() => {
+      this._clearSticker()
+      this.setData({ flyOut: false })
+      if (prevCount === 0) {
+        // 今日第一条：点燃连续记录的火苗
+        this.setData({ flameOn: true })
+        setTimeout(() => this.setData({ flameOn: false }), 1000)
+      }
+      this._popCount(prevCount)
+      this.refreshToday().then(() => {
+        const first = this.data.todayEntries[0]
+        if (first) {
+          this.setData({ landedId: first._id })
+          setTimeout(() => {
+            if (this.data.landedId === first._id) this.setData({ landedId: '' })
+          }, 1500)
+        }
+      })
+      this._checkMilestones()
+    }, 520)
+  },
+
+  _popCount(from) {
+    const to = from + 1
+    let cur = from
+    this.setData({ countPop: true })
+    const t = setInterval(() => {
+      cur++
+      this.setData({ todayCount: Math.min(cur, to) })
+      if (cur >= to) {
+        clearInterval(t)
+        setTimeout(() => this.setData({ countPop: false }), 380)
+      }
+    }, 90)
+  },
+
+  // 里程碑：按优先级取第一个「已达成且从未庆祝过」的节点
+  _checkMilestones() {
+    stats.loadSummary().then((d) => {
+      const shown = wx.getStorageSync(MILESTONE_KEY) || []
+      const cands = []
+      if ((d.voiceTotal || 0) >= 1) {
+        cands.push({ key: 'voice-1', title: '第一枚声音灵感 ♪', body: '旋律落进了口袋，随时可以回来听。' })
+      }
+      const s = d.streak || 0
+      MILESTONE_STREAK.forEach((n) => {
+        if (s >= n) cands.push({ key: 'streak-' + n, title: '连续记录 ' + n + ' 天', body: '复利正在发生，你的 context 没有一天缺席。' })
+      })
+      const t = d.total || 0
+      MILESTONE_TOTAL.forEach((n) => {
+        if (t >= n) cands.push({ key: 'total-' + n, title: '第 ' + n + ' 条记录', body: '你的 context 资产又厚了一页。' })
+      })
+      const tc = d.typeCounts || {}
+      if ((tc.decision || 0) >= 10) {
+        cands.push({ key: 'type-decision-10', title: '第 10 个决策', body: '每个决定都值得被记住，你已经记下十个。' })
+      }
+      if ((tc.reflection || 0) >= 10) {
+        cands.push({ key: 'type-reflection-10', title: '第 10 篇反思', body: '思考正在沉淀成你的护城河。' })
+      }
+      const hit = cands.find((c) => shown.indexOf(c.key) < 0)
+      if (!hit) return
+      try { wx.setStorageSync(MILESTONE_KEY, shown.concat(hit.key)) } catch (e) { /* noop */ }
+      this._vibrate('medium')
+      this.setData({ milestone: hit })
+      if (this._msTimer) clearTimeout(this._msTimer)
+      this._msTimer = setTimeout(() => this.setData({ milestone: null }), 3000)
+    }).catch(() => { /* 统计失败不影响记录主流程 */ })
+  },
+
+  dismissMilestone() {
+    if (this._msTimer) clearTimeout(this._msTimer)
+    this.setData({ milestone: null })
   },
 
   /* ---------- 暂存语音（7 天有效） ---------- */
@@ -897,13 +984,14 @@ Page({
   },
 
   refreshToday() {
-    if (!wx.cloud || !wx.cloud.database) return
+    if (!wx.cloud || !wx.cloud.database) return Promise.resolve()
     const now = new Date()
     const todayKey = fmt.dayKey(now)
     const db = wx.cloud.database()
+    const _ = db.command
 
-    db.collection('entries')
-      .where({ _openid: '{openid}', dayKey: todayKey })
+    return db.collection('entries')
+      .where({ _openid: '{openid}', dayKey: todayKey, deletedAt: _.exists(false) })
       .orderBy('createdAt', 'desc')
       .limit(20)
       .get()

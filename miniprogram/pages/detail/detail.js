@@ -1,6 +1,14 @@
 const fmt = require('../../utils/format')
 const stats = require('../../utils/stats')
 const { typeMeta } = require('../../utils/types')
+const config = require('../../config')
+
+const FB_CHIPS = [
+  { k: 'digest', label: '提炼要点' },
+  { k: 'challenge', label: '挑战我的想法' },
+  { k: 'action', label: '下一步行动' },
+  { k: 'companion', label: '陪我说说' }
+]
 
 Page({
   data: {
@@ -12,12 +20,18 @@ Page({
     voicePlaying: false,
     showRaw: false,
     editing: false,
-    editText: ''
+    editText: '',
+    // AI 反馈
+    fbChips: FB_CHIPS,
+    feedbacks: [],     // [{ kind, label, text, timeText }] 最新在前
+    fbLoading: false,
+    aiEnabled: false
   },
 
   onLoad(options) {
     this.setData({ id: options.id || '' })
     this.load()
+    this._checkAi()
   },
 
   onUnload() {
@@ -56,12 +70,97 @@ Page({
           voices: isVoice ? [] : voices,
           isVoice,
           voicePlaying: false,
+          // 反馈历史：最新在前；陪我说说带 companion 标记做绿色轻松样式
+          feedbacks: (Array.isArray(e.feedbacks) ? e.feedbacks : []).slice().reverse().map((f) => ({
+            kind: f.kind,
+            label: (FB_CHIPS.find((c) => c.k === f.kind) || {}).label || 'AI 反馈',
+            text: f.text || '',
+            timeText: fmt.hm(fmt.toDate(f.createdAt)),
+            id: fmt.toDate(f.createdAt).getTime() // 删除反馈时定位用
+          })),
           editText: e.text || e.raw
         })
+        // 已在回收站的记录：提示并返回（还原入口在设置页）
+        if (e.deletedAt) {
+          wx.showToast({ title: '该记录已在回收站，可在设置中还原', icon: 'none', duration: 2000 })
+          setTimeout(() => wx.navigateBack(), 1200)
+        }
       })
       .catch(() => {
         wx.showToast({ title: '记录不存在或已删除', icon: 'none' })
       })
+  },
+
+  /* ---------- AI 反馈 ---------- */
+
+  // 与 saveEntry 的 Key 解析口径一致：own+Key 或 dev+已同意 才算可用
+  _checkAi() {
+    if (!wx.cloud || !wx.cloud.database) return
+    wx.cloud.database().collection('users').where({ _openid: '{openid}' }).limit(1).get()
+      .then((res) => {
+        const doc = res.data && res.data[0]
+        const ok = !!(doc && ((doc.apiMode === 'own' && doc.apiKey) ||
+          (doc.apiMode === 'dev' && doc.devConsent)))
+        this.setData({ aiEnabled: ok })
+      })
+      .catch(() => this.setData({ aiEnabled: false }))
+  },
+
+  _guideEnableAi() {
+    wx.showModal({
+      title: '当前是无 AI 模式',
+      content: '无法获取反馈，可在设置页选择 AI 引擎。',
+      confirmText: '去设置',
+      cancelText: '知道了',
+      confirmColor: '#E8B44B',
+      success: (r) => { if (r.confirm) wx.switchTab({ url: '/pages/settings/settings' }) }
+    })
+  },
+
+  askFeedback(e) {
+    if (this.data.fbLoading) return
+    const kind = e.currentTarget.dataset.kind
+    if (!kind) return
+    if (!this.data.aiEnabled) {
+      this._guideEnableAi()
+      return
+    }
+    this.setData({ fbLoading: true })
+    wx.cloud.callFunction({
+      name: config.CLOUD_FUNCTIONS.SAVE_ENTRY,
+      data: { feedback: true, kind, entryId: this.data.id }
+    }).then((res) => {
+      this.setData({ fbLoading: false })
+      const r = res.result || {}
+      if (r.ok) {
+        try { wx.vibrateShort({ type: 'light' }) } catch (err) { /* noop */ }
+        this.load()
+      } else if (r.error === 'no-key') {
+        this._guideEnableAi()
+      } else if (r.error === 'ai-fail' || r.error === 'ai-empty') {
+        wx.showToast({ title: 'AI 暂时没回应，稍后再试', icon: 'none' })
+      } else {
+        wx.showToast({ title: '反馈失败', icon: 'none' })
+      }
+    }).catch(() => {
+      this.setData({ fbLoading: false })
+      wx.showToast({ title: '网络不佳，稍后再试', icon: 'none' })
+    })
+  },
+
+  // 删除某条反馈（不满意时可删掉重新生成）
+  deleteFeedback(e) {
+    const ts = Number(e.currentTarget.dataset.ts)
+    const list = (this.data.entry && this.data.entry.feedbacks) || []
+    const kept = list.filter((f) => fmt.toDate(f.createdAt).getTime() !== ts)
+    if (kept.length === list.length) return
+    wx.cloud.database().collection('entries').doc(this.data.id)
+      .update({ data: { feedbacks: kept } })
+      .then(() => {
+        wx.showToast({ title: '已删除反馈', icon: 'none' })
+        this.load()
+      })
+      .catch(() => wx.showToast({ title: '删除失败', icon: 'none' }))
   },
 
   /* ---------- 声音灵感 ---------- */
@@ -245,24 +344,18 @@ Page({
   deleteEntry() {
     wx.showModal({
       title: '删除这条记录？',
-      content: '删除后不可恢复。',
+      content: '将移入回收站，3 天内可在「设置 → 回收站」还原，之后自动彻底删除。',
       confirmText: '删除',
       confirmColor: '#F0666E',
       success: (r) => {
         if (!r.confirm) return
         const db = wx.cloud.database()
-        const audios = (this.data.entry && this.data.entry.audioFileIDs) || []
-        db.collection('entries').doc(this.data.id).remove()
+        // 软删除：保留原文与音频，3 天内可按原时间线位置还原
+        db.collection('entries').doc(this.data.id)
+          .update({ data: { deletedAt: new Date() } })
           .then(() => {
-            // 记录删除后其音频（原声/声音灵感）一并清理，不留孤儿文件
-            audios.forEach((f) => {
-              wx.cloud.callFunction({
-                name: 'asr',
-                data: { discard: f }
-              }).catch(() => {})
-            })
             stats.invalidate()
-            wx.showToast({ title: '已删除', icon: 'none' })
+            wx.showToast({ title: '已移入回收站', icon: 'none' })
             setTimeout(() => wx.navigateBack(), 600)
           })
           .catch(() => wx.showToast({ title: '删除失败', icon: 'none' }))

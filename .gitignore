@@ -12,10 +12,13 @@ project.private.config.json
 初步沟通.md
 新点子.txt
 
-# 本地素材与草稿（界面截图源文件、演示稿）
+# 本地素材与草稿（界面截图源文件、演示稿、参考图）
 截图*.png
 截图*.jpg
+界面参考.png
+热力图参考.png
 画图.pptx
+~$*
 
 # 系统与编辑器
 .DS_Store

@@ -5,7 +5,7 @@
     <view class="header-left">
       <view class="date">{{todayTitle}}</view>
       <view class="streak" wx:if="{{streak > 0}}">
-        <view class="icon-flame"></view>
+        <view class="icon-flame {{flameOn ? 'ignite' : ''}}"></view>
         <text>连续记录 {{streak}} 天</text>
       </view>
       <view class="streak muted" wx:else>从今天开始积累你的 context</view>
@@ -47,7 +47,7 @@
 
   <!-- 今日概览 -->
   <view class="today-bar">
-    <view>今日 <text class="count">{{todayCount}}</text> 条</view>
+    <view>今日 <text class="count {{countPop ? 'pop' : ''}}">{{todayCount}}</text> 条</view>
     <view class="hint">说完可追加 · 点「完成」才保存</view>
   </view>
 
@@ -77,7 +77,7 @@
     </view>
 
     <!-- 贴纸（未确认草稿） -->
-    <view class="sticker" wx:elif="{{sticker}}">
+    <view class="sticker {{flyOut ? 'fly-out' : ''}}" wx:elif="{{sticker}}">
       <view class="sticker-head">
         <text class="sticker-badge">新贴纸</text>
         <text class="sticker-count" wx:if="{{sticker.segments.length}}">{{sticker.segments.length}} 段 · 点击确认以保存</text>
@@ -166,16 +166,26 @@
     <text class="more" bindtap="goHistory">查看全部 ›</text>
   </view>
   <view class="timeline" wx:if="{{todayEntries.length}}">
-    <entry-card
-      wx:for="{{todayEntries}}"
-      wx:key="_id"
-      entry="{{item}}"
-      bind:tapentry="goDetail"
-    />
+    <view class="tl-wrap {{landedId === item._id ? 'landed' : ''}}" wx:for="{{todayEntries}}" wx:key="_id">
+      <entry-card
+        entry="{{item}}"
+        bind:tapentry="goDetail"
+      />
+    </view>
   </view>
   <view class="empty" wx:else>今天还没有记录，按住下方按钮，说出第一段。</view>
 
   <!-- 隐私说明 -->
   <view class="privacy-line">你的记录按微信账号隔离存储，仅你本人可见，其他用户无法读取；原文模式下数据不经过任何第三方。</view>
 
+</view>
+
+<!-- 里程碑庆祝（保存成功后短暂浮现，轻点或 3 秒后自动消失） -->
+<view class="ms-overlay" wx:if="{{milestone}}" bindtap="dismissMilestone">
+  <view class="milestone-card">
+    <view class="ms-deco">✦</view>
+    <view class="ms-title">{{milestone.title}}</view>
+    <view class="ms-body">{{milestone.body}}</view>
+    <view class="ms-foot">轻点任意处继续</view>
+  </view>
 </view>

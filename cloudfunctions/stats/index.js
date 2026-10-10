@@ -40,10 +40,10 @@ function dayKeyAdd(dayKey, deltaDays) {
   return dayKeyOfTs(Date.UTC(y, m - 1, d) - 8 * 3600 * 1000 + deltaDays * 86400000)
 }
 
-// 统计：按 dayKey 聚合条数 + 连续天数
+// 统计：按 dayKey 聚合条数 + 连续天数 + 分类/类型计数（里程碑反馈用）；排除回收站
 async function summary(openid) {
   const res = await db.collection('entries').aggregate()
-    .match({ _openid: openid })
+    .match({ _openid: openid, deletedAt: _.exists(false) })
     .group({ _id: '$dayKey', count: $.sum(1) })
     .sort({ _id: -1 })
     .limit(SUMMARY_DAYS)
@@ -71,7 +71,22 @@ async function summary(openid) {
     if (run > longest) longest = run
   }
 
-  return { total, streak, longestStreak: longest, days }
+  // 分类计数（decision/reflection/fragment）与声音灵感总数
+  const [typeRes, kindRes] = await Promise.all([
+    db.collection('entries').aggregate()
+      .match({ _openid: openid, deletedAt: _.exists(false) })
+      .group({ _id: '$type', count: $.sum(1) })
+      .end(),
+    db.collection('entries').aggregate()
+      .match({ _openid: openid, deletedAt: _.exists(false) })
+      .group({ _id: '$kind', count: $.sum(1) })
+      .end()
+  ])
+  const typeCounts = {}
+  ;(typeRes.list || []).forEach((d) => { if (d._id) typeCounts[d._id] = d.count })
+  const voiceTotal = (((kindRes.list || []).find((d) => d._id === 'voice') || {}).count) || 0
+
+  return { total, streak, longestStreak: longest, days, typeCounts, voiceTotal }
 }
 
 const TYPE_LABEL = { decision: '决策', reflection: '反思', fragment: '碎片' }
@@ -86,7 +101,7 @@ function hmOfTs(ts) {
 async function exportMarkdown(openid, skip, limit) {
   const chunk = Math.min(Math.max(limit || EXPORT_CHUNK, 1), EXPORT_CHUNK)
   const res = await db.collection('entries')
-    .where({ _openid: openid })
+    .where({ _openid: openid, deletedAt: _.exists(false) })
     .orderBy('createdAt', 'asc')
     .skip(Math.max(skip || 0, 0))
     .limit(chunk)
@@ -152,10 +167,37 @@ async function cleanupExpiredClips() {
   return { cleaned }
 }
 
+// 定时清理：回收站超过 3 天的记录彻底删除（连同其音频）
+const BIN_KEEP_DAYS = 3
+async function cleanupBin() {
+  const expire = new Date(Date.now() - BIN_KEEP_DAYS * 86400000)
+  let cleaned = 0
+  for (let round = 0; round < 25; round++) {
+    const res = await db.collection('entries')
+      .where({ deletedAt: _.lt(expire) })
+      .limit(20)
+      .get()
+    const list = res.data || []
+    if (!list.length) break
+    for (const it of list) {
+      const audios = Array.isArray(it.audioFileIDs) ? it.audioFileIDs : []
+      for (const f of audios) {
+        try { await cloud.deleteFile({ fileList: [f] }) } catch (e) { /* noop */ }
+      }
+      try { await db.collection('entries').doc(it._id).remove() } catch (e) { /* noop */ }
+      cleaned++
+    }
+  }
+  console.log('清理回收站过期记录', cleaned, '条')
+  return { cleaned }
+}
+
 exports.main = async (event) => {
   // 定时触发器：event 形如 { Type: 'Timer', TriggerName: '...' }
   if (event.Type === 'Timer' || event.triggerName || event.TriggerName || event.action === 'cleanup') {
-    return cleanupExpiredClips()
+    const clips = await cleanupExpiredClips()
+    const bin = await cleanupBin()
+    return { clips, bin }
   }
 
   const { OPENID } = cloud.getWXContext()

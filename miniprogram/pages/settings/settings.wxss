@@ -138,6 +138,49 @@
   transform: translateX(40rpx);
 }
 
+/* 回收站 */
+.bin-empty {
+  padding: 16rpx 0 10rpx;
+  font-size: 22rpx;
+  color: var(--text-faint);
+  line-height: 1.7;
+}
+.bin-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid rgba(255, 255, 255, 0.06);
+}
+.bin-item:last-child {
+  border-bottom: none;
+}
+.bin-body {
+  flex: 1;
+  min-width: 0;
+}
+.bin-preview {
+  font-size: 26rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bin-meta {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: var(--text-faint);
+}
+.bin-act {
+  flex-shrink: 0;
+  font-size: 24rpx;
+  padding: 10rpx 14rpx;
+}
+.bin-act.restore {
+  color: var(--gold);
+}
+.bin-act.danger {
+  color: var(--danger);
+}
+
 /* 数据行 */
 .row {
   padding: 22rpx 0;

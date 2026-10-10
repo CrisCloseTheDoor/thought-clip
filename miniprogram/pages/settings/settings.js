@@ -5,20 +5,24 @@ const stats = require('../../utils/stats')
 Page({
   data: {
     loading: true,
-    // API 模式：own = 用我自己的 Key；dev = 用开发者提供的 API；none = 原文记录（默认，不用 AI）
-    apiMode: 'none',
+    // API 模式：own = 用我自己的 Key；dev = 用开发者提供的 API；none = 不使用AI
+    // 新用户默认预选 dev（首次需同意隐私说明激活；此前默认 none）
+    apiMode: 'dev',
     apiKey: '',
     apiKeyMask: '',
     devConsent: false,
     // 保留原声：成功识别的录音随记录长期保留，详情页可回听
     keepVoice: false,
     // 语音识别服务状态（null=未知，true=已配置，false=未配置）
-    asrReady: null
+    asrReady: null,
+    // 回收站（软删除 3 天内可还原）
+    bin: []
   },
 
   onShow() {
     this.load()
     this._checkAsr()
+    this.loadBin()
   },
 
   _checkAsr() {
@@ -86,12 +90,16 @@ Page({
       if (this.data.apiKey) {
         this.save({ apiMode: 'own' })
       } else {
-        this._promptKey(true) // 取消则回到原文记录
+        this._promptKey(true) // 取消则回到未选择
       }
     } else if (mode === 'none') {
       this.save({ apiMode: 'none' })
+    } else if (mode === 'dev') {
+      // 已同意过隐私说明：切换即写库生效（否则只改界面、库里还是旧值，
+      // 会导致详情页判定无 AI、重进设置跳回旧选项）
+      if (this.data.devConsent) this.save({ apiMode: 'dev' })
+      // 首次选 dev：等用户点下方「同意隐私说明并启用」才生效
     }
-    // dev 模式：等用户点下方「同意隐私说明并启用」才生效
   },
 
   // 同意开发者模式（隐私说明已显示在按钮上方，点按钮即视为同意）
@@ -173,6 +181,78 @@ Page({
     wx.showToast({
       title: v ? '开：录音随记录保留' : '关：识别后即删除录音',
       icon: 'none'
+    })
+  },
+
+  /* ---------- 回收站（软删除 3 天） ---------- */
+
+  loadBin() {
+    if (!wx.cloud || !wx.cloud.database) return
+    const _ = wx.cloud.database().command
+    wx.cloud.database().collection('entries')
+      .where({ _openid: '{openid}', deletedAt: _.exists(true) })
+      .orderBy('deletedAt', 'desc')
+      .limit(20)
+      .get()
+      .then((res) => {
+        const bin = (res.data || [])
+          .map((d) => {
+            const t = fmt.toDate(d.deletedAt)
+            return {
+              id: d._id,
+              kind: d.kind || '',
+              preview: d.kind === 'voice'
+                ? '♪ ' + (d.title || '声音灵感')
+                : (d.text || d.raw || '').slice(0, 30),
+              deletedText: fmt.hm(t),
+              remainDays: fmt.remainingDays(new Date(t.getTime() + 3 * 86400000))
+            }
+          })
+          .filter((it) => it.remainDays > 0) // 已过期的等定时清理，不再展示
+        this.setData({ bin })
+      })
+      .catch(() => {})
+  },
+
+  restoreEntry(e) {
+    const id = e.currentTarget.dataset.id
+    const _ = wx.cloud.database().command
+    wx.cloud.database().collection('entries').doc(id)
+      // 移除 deletedAt 即还原：createdAt 未动过，自动回到时间线原位
+      .update({ data: { deletedAt: _.remove() } })
+      .then(() => {
+        stats.invalidate()
+        wx.showToast({ title: '已还原', icon: 'success' })
+        this.loadBin()
+      })
+      .catch(() => wx.showToast({ title: '还原失败', icon: 'none' }))
+  },
+
+  purgeEntry(e) {
+    const id = e.currentTarget.dataset.id
+    wx.showModal({
+      title: '彻底删除？',
+      content: '记录及其音频将被永久删除，不可恢复。',
+      confirmText: '彻底删除',
+      confirmColor: '#F0666E',
+      success: (r) => {
+        if (!r.confirm) return
+        const db = wx.cloud.database()
+        db.collection('entries').doc(id).get()
+          .then((res) => {
+            const audios = (res.data && res.data.audioFileIDs) || []
+            audios.forEach((f) => {
+              wx.cloud.callFunction({ name: 'asr', data: { discard: f } }).catch(() => {})
+            })
+            return db.collection('entries').doc(id).remove()
+          })
+          .then(() => {
+            stats.invalidate()
+            wx.showToast({ title: '已彻底删除', icon: 'none' })
+            this.loadBin()
+          })
+          .catch(() => wx.showToast({ title: '删除失败', icon: 'none' }))
+      }
     })
   },
 

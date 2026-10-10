@@ -2,8 +2,8 @@
 
   <view class="page-title">设置</view>
 
-  <!-- AI 整理引擎 -->
-  <view class="group-title">AI 整理引擎</view>
+  <!-- AI 引擎 -->
+  <view class="group-title">AI 引擎</view>
   <view class="card group">
     <radio-group bindchange="onModeChange">
       <label class="mode-item">
@@ -17,7 +17,7 @@
       <label class="mode-item">
         <radio value="dev" checked="{{apiMode === 'dev'}}" color="#E8B44B" />
         <view class="mode-body">
-          <view class="mode-name">使用开发者提供的 API</view>
+          <view class="mode-name">使用开发者提供的 API（推荐）</view>
           <view class="mode-desc">零配置即用；记录文本会经开发者云环境发送给 DeepSeek 整理（需同意下方隐私说明）。</view>
         </view>
       </label>
@@ -25,15 +25,15 @@
       <label class="mode-item">
         <radio value="none" checked="{{apiMode === 'none'}}" color="#E8B44B" />
         <view class="mode-body">
-          <view class="mode-name">原文记录（默认）</view>
-          <view class="mode-desc">不开启 AI 整理，直接保存原文。最省事、最隐私，但不生成关键词/分类与每日总结。</view>
+          <view class="mode-name">不使用AI</view>
+          <view class="mode-desc">不开启AI整理和自动分类，直接保存原文，也无法获得AI反馈，最简约省心。</view>
         </view>
       </label>
     </radio-group>
 
-    <!-- 原文记录模式说明 -->
+    <!-- 不使用AI 说明 -->
     <view class="none-note" wx:if="{{apiMode === 'none'}}">
-      记录将以原文保存，不经过 AI 大模型。如需自动清理语气词、分类和每日总结，请切换到上方两种 AI 模式。
+      记录将以原文直接保存，不经过任何 AI。如需整理、分类或 AI 反馈，可切换到上方两种模式。
     </view>
 
     <!-- 自有 Key 模式 -->
@@ -87,6 +87,20 @@
         <view class="mode-desc ok" wx:elif="{{asrReady}}">✓ 已配置，按住麦克风即可语音记录</view>
         <view class="mode-desc warn" wx:else>⚠ 未配置：需在云函数 asr 环境变量填入腾讯云 SecretId/SecretKey（见 README）</view>
       </view>
+    </view>
+  </view>
+
+  <!-- 回收站 -->
+  <view class="group-title">回收站</view>
+  <view class="card group">
+    <view class="bin-empty" wx:if="{{!bin.length}}">删除的记录会在这里保留 3 天，可随时还原到时间线原位。</view>
+    <view class="bin-item" wx:for="{{bin}}" wx:key="id">
+      <view class="bin-body">
+        <view class="bin-preview">{{item.preview}}</view>
+        <view class="bin-meta">{{item.deletedText}} 删除 · 剩余 {{item.remainDays}} 天</view>
+      </view>
+      <view class="bin-act restore" bindtap="restoreEntry" data-id="{{item.id}}">还原</view>
+      <view class="bin-act danger" bindtap="purgeEntry" data-id="{{item.id}}">彻底删除</view>
     </view>
   </view>
 

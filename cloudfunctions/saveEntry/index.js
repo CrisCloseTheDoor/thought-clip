@@ -8,6 +8,7 @@
  *                   按东八区显式计算兜底
  *   audioFileIDs    (可选) 「保留原声」开启时的录音云文件 ID 数组，随记录落库
  *   kind            (可选) 'voice' = 声音灵感：title/amps/duration 必备，不经 AI
+ *   feedback        (可选) true = 对已有记录按需生成 AI 反馈（kind 为反馈类别）
  *   refineOnly      (可选) true = 仅返回 AI 整理结果，不落库（贴纸逐段整理用）
  *   test            (可选) true = 仅测试 DeepSeek 连通性，不落库
  *   apiKeyOverride  (可选) 测试连接时临时传入的 Key，不落库
@@ -35,6 +36,15 @@ const SYSTEM_PROMPT = `你是用户的个人记录整理助手。将口语化、
 6. 原文少于8字或内容无意义时，text 原样返回、type 用 fragment。
 输出格式：{"text":"整理后文本","type":"decision|reflection|fragment","keywords":["词1","词2"]}`
 
+// AI 反馈（按需，用户主动触发）：四类，一律限 150 字内
+const FEEDBACK_SYSTEM = '你是用户的私人思考伙伴。回复用简体中文，语气自然克制，严禁说教。严格遵守字数限制。'
+const FEEDBACK_META = {
+  digest: '把这段个人记录提炼成 3-5 条要点，每条一行、简洁独立。不新增信息、不评判。总字数不超过150字。直接输出要点列表，不要任何前后缀。',
+  challenge: '你是用户的思考陪练。针对这段记录，指出 1-2 个最值得质疑的假设或盲点，并给出简短的反方视角或追问。语气坦诚友善，不居高临下。总字数不超过150字。直接输出内容。',
+  action: '从这段记录中提炼最多 3 条可执行的小步骤，每条以动词开头、单步可完成。若确实没有可行动的内容，请诚实说明。总字数不超过150字。直接输出列表。',
+  companion: '你是温柔的倾听者。用户刚写下一段心事或碎碎念。先接住情绪（不评判、不建议、不诊断），再以一句关心的开放式问题结尾。总字数不超过150字。直接输出内容。'
+}
+
 function postJson(url, headers, body) {
   return new Promise((resolve, reject) => {
     const u = new URL(url)
@@ -61,17 +71,19 @@ function postJson(url, headers, body) {
   })
 }
 
-async function callDeepSeek(apiKey, text, maxTokens) {
-  const res = await postJson(DEEPSEEK_URL, { Authorization: 'Bearer ' + apiKey }, {
+// opts.plain = true 时输出纯文本（AI 反馈用），否则 JSON（整理用）
+async function callDeepSeek(apiKey, text, maxTokens, systemPrompt, opts) {
+  const body = {
     model: MODEL,
     messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
+      { role: 'system', content: systemPrompt || SYSTEM_PROMPT },
       { role: 'user', content: text }
     ],
-    response_format: { type: 'json_object' },
     max_tokens: maxTokens || 500,
-    temperature: 0.3
-  })
+    temperature: (opts && opts.temperature) || 0.3
+  }
+  if (!(opts && opts.plain)) body.response_format = { type: 'json_object' }
+  const res = await postJson(DEEPSEEK_URL, { Authorization: 'Bearer ' + apiKey }, body)
   if (res.status !== 200) {
     const err = new Error('DeepSeek HTTP ' + res.status + ': ' + JSON.stringify(res.body).slice(0, 200))
     err.status = res.status
@@ -169,6 +181,45 @@ exports.main = async (event) => {
     doc._id = addRes._id
     doc.createdAt = now.toISOString()
     return { entry: doc }
+  }
+
+  // AI 反馈：对已有记录按需生成，结果追加保存在记录下（留最近 5 条）
+  if (event.feedback) {
+    const kind = FEEDBACK_META[event.kind] ? event.kind : null
+    if (!kind) return { error: 'bad-kind' }
+    const apiKey = await resolveKey(OPENID, null)
+    if (!apiKey) return { error: 'no-key' }
+
+    let entry
+    try {
+      const r = await db.collection('entries').doc(event.entryId).get()
+      entry = r.data
+    } catch (e) {
+      return { error: 'not-found' }
+    }
+    if (!entry || entry._openid !== OPENID) return { error: 'not-found' }
+    const content = (entry.text || entry.raw || '').trim()
+    if (!content) return { error: 'empty' }
+
+    let text = ''
+    try {
+      const prompt = '【任务】' + FEEDBACK_META[kind] + '\n\n【用户记录】\n' + content
+      text = (await callDeepSeek(apiKey, prompt, 400, FEEDBACK_SYSTEM,
+        { plain: true, temperature: kind === 'companion' || kind === 'challenge' ? 0.6 : 0.3 })).trim()
+    } catch (e) {
+      console.error('AI 反馈生成失败', e.message)
+      return { error: 'ai-fail' }
+    }
+    if (!text) return { error: 'ai-empty' }
+
+    const fb = { kind, text: text.slice(0, 400), createdAt: new Date() }
+    const list = (Array.isArray(entry.feedbacks) ? entry.feedbacks : []).concat(fb).slice(-5)
+    try {
+      await db.collection('entries').doc(event.entryId).update({ data: { feedbacks: list } })
+    } catch (e) {
+      return { error: 'save-fail' }
+    }
+    return { ok: true, feedbacks: list }
   }
 
   // 测试连接：不落库

@@ -18,11 +18,27 @@
         <text class="stat-label">最长连续</text>
       </view>
     </view>
-    <view class="heat" wx:if="{{heatColumns.length}}">
-      <view class="heat-col" wx:for="{{heatColumns}}" wx:key="key" wx:for-item="col">
-        <view wx:for="{{col.cells}}" wx:key="key" wx:for-item="cell"
-          class="heat-cell {{cell.blank ? 'blank' : 'lv-' + cell.level}}"></view>
+    <view class="heat-wrap" wx:if="{{heatColumns.length}}" bindtap="clearHeatTip">
+      <view class="heat-months">
+        <view class="heat-month" wx:for="{{heatColumns}}" wx:key="key" wx:for-item="col">{{col.monthLabel}}</view>
       </view>
+      <view class="heat-body">
+        <view class="heat-weeks">
+          <view class="heat-week">周一</view>
+          <view class="heat-week gap">周三</view>
+          <view class="heat-week gap">周五</view>
+        </view>
+        <view class="heat-cols">
+          <view class="heat-col" wx:for="{{heatColumns}}" wx:key="key" wx:for-item="col">
+            <view wx:for="{{col.cells}}" wx:key="key" wx:for-item="cell"
+              class="heat-cell {{cell.blank ? 'blank' : 'lv-' + cell.level}} {{heatTip.key === cell.key ? 'on' : ''}}"
+              data-key="{{cell.key}}" data-count="{{cell.count}}"
+              catchtap="{{cell.blank ? '' : 'onHeatTap'}}"></view>
+          </view>
+        </view>
+      </view>
+      <!-- 轻点色块的信息浮窗（fixed 跟随指尖） -->
+      <view class="heat-tip" wx:if="{{heatTip.show}}" style="left: {{heatTip.x}}px; top: {{heatTip.y}}px;">{{heatTip.text}}</view>
     </view>
     <view class="heat-legend">
       <text>少言无事</text>

@@ -116,7 +116,7 @@ exports.main = async (event) => {
   const dayKey = event.dayKey || dayKeyOf(new Date(Date.now() + 8 * 3600 * 1000 - 86400000))
 
   const entryRes = await db.collection('entries')
-    .where({ _openid: OPENID, dayKey })
+    .where({ _openid: OPENID, dayKey, deletedAt: db.command.exists(false) })
     .limit(30)
     .get()
   const entries = entryRes.data || []

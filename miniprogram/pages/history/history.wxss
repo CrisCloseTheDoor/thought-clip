@@ -29,10 +29,45 @@
   margin-top: 6rpx;
 }
 
-/* 热力图：列平分卡片宽度，格子随屏幕自适应 */
-.heat {
-  display: flex;
+/* 热力图：GitHub 式标注（顶部月份 + 左侧周几） */
+.heat-wrap {
   margin-top: 24rpx;
+}
+.heat-months {
+  display: flex;
+  padding-left: 50rpx;
+  margin-bottom: 8rpx;
+}
+.heat-month {
+  flex: 1;
+  margin-right: 10rpx;
+  height: 24rpx;
+  line-height: 24rpx;
+  font-size: 18rpx;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.heat-body {
+  display: flex;
+}
+.heat-weeks {
+  flex-shrink: 0;
+  width: 40rpx;
+  margin-right: 10rpx;
+}
+.heat-week {
+  height: 24rpx;
+  line-height: 24rpx;
+  font-size: 18rpx;
+  color: var(--text-faint);
+}
+/* 行距 = 两行色块的步进（24 高 + 10 间距 ×2） */
+.heat-week.gap {
+  margin-top: 44rpx;
+}
+.heat-cols {
+  flex: 1;
+  display: flex;
   overflow: hidden;
 }
 .heat-col {
@@ -50,6 +85,40 @@
   border-radius: 5rpx;
   margin-bottom: 10rpx;
   background: rgba(232, 180, 75, 0.07);
+}
+/* 浮窗选中态：金色描边 */
+.heat-cell.on {
+  box-shadow: 0 0 0 3rpx rgba(232, 180, 75, 0.8);
+}
+
+/* 轻点浮窗：fixed 定位在指尖上方 */
+.heat-tip {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, -100%);
+  background: #262A33;
+  border: 1rpx solid rgba(232, 180, 75, 0.45);
+  color: var(--text);
+  font-size: 22rpx;
+  padding: 12rpx 22rpx;
+  border-radius: 12rpx;
+  white-space: nowrap;
+  animation: tipIn 0.18s ease;
+  margin-top: -14rpx; /* 与色块留一点空隙 */
+}
+.heat-tip::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: -10rpx;
+  transform: translateX(-50%);
+  border-left: 10rpx solid transparent;
+  border-right: 10rpx solid transparent;
+  border-top: 10rpx solid #262A33;
+}
+@keyframes tipIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 .heat-cell.blank {
   background: transparent;

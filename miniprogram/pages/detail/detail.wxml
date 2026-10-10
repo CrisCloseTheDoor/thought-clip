@@ -63,6 +63,42 @@
     </block>
   </view>
 
+  <!-- 原始转写对比 -->
+  <view class="card raw-card" wx:if="{{entry.raw && entry.raw !== entry.text}}">
+    <view class="raw-head" bindtap="toggleRaw">
+      <text>原始转写（AI 整理前）</text>
+      <text class="arrow">{{showRaw ? '收起 ▾' : '展开 ▸'}}</text>
+    </view>
+    <view class="raw-body" wx:if="{{showRaw}}">{{entry.raw}}</view>
+  </view>
+
+  <!-- 你想获得什么反馈？：按需内容反馈 -->
+  <view class="card fb-card">
+    <view class="fb-head">
+      <text>你想获得什么反馈？</text>
+      <text class="fb-hint">按需反馈 · 随记录留存</text>
+    </view>
+    <view class="fb-chips">
+      <view class="fb-chip {{item.k === 'companion' ? 'companion' : ''}}"
+        wx:for="{{fbChips}}" wx:key="k" bindtap="askFeedback" data-kind="{{item.k}}">{{item.label}}</view>
+    </view>
+    <view class="fb-loading" wx:if="{{fbLoading}}">正在思考…（约数秒）</view>
+    <view class="fb-empty" wx:elif="{{!feedbacks.length}}">选一个，几秒后回来收反馈；不满意可删除重来</view>
+    <view class="fb-list" wx:else>
+      <view class="fb-item {{item.kind === 'companion' ? 'companion' : ''}}"
+        wx:for="{{feedbacks}}" wx:key="id">
+        <view class="fb-meta">
+          <text class="fb-kind">{{item.label}}</text>
+          <view class="fb-right">
+            <text class="fb-time">{{item.timeText}}</text>
+            <view class="fb-del" catchtap="deleteFeedback" data-ts="{{item.id}}">✕</view>
+          </view>
+        </view>
+        <view class="fb-text">{{item.text}}</view>
+      </view>
+    </view>
+  </view>
+
   <!-- 保留的原声 -->
   <view class="card voice-card" wx:if="{{voices.length}}">
     <view class="voice-title">原声</view>
@@ -72,15 +108,6 @@
       <text class="voice-label">{{item.label}}</text>
       <text class="voice-state">{{playingVoice === item.fileID ? '正在播放' : '点击回听'}}</text>
     </view>
-  </view>
-
-  <!-- 原始转写对比 -->
-  <view class="card raw-card" wx:if="{{entry.raw && entry.raw !== entry.text}}">
-    <view class="raw-head" bindtap="toggleRaw">
-      <text>原始转写（AI 整理前）</text>
-      <text class="arrow">{{showRaw ? '收起 ▾' : '展开 ▸'}}</text>
-    </view>
-    <view class="raw-body" wx:if="{{showRaw}}">{{entry.raw}}</view>
   </view>
 
   <!-- 操作 -->
