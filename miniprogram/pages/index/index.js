@@ -8,6 +8,7 @@ const { typeMeta } = require('../../utils/types')
 const MAX_RECORD_SECONDS = 60
 const WARN_AT = 52            // 距上限 8 秒时预警，提醒收尾
 const SHORT_RECORD_MS = 1000  // 短于 1s 视为误触，直接剪枝不识别
+const ZONE_SLIDE_PX = 70      // 录音中上滑/下滑进入区域的手指位移阈值（屏幕像素）
 const WAVE_BARS = 28          // 波形条数
 const DRAFT_KEY = 'draftSticker'
 const CLIP_KEEP_DAYS = 7
@@ -33,6 +34,7 @@ Page({
     stage: 'idle',
     recordSeconds: 0,
     bars: [],                 // 实时波形 [{k, v}]，v 为 0-100 高度
+    recZone: '',              // 录音中手指所在区域：'' | inspire(上滑) | discard(下滑)
     saving: false,            // 贴纸保存中
     // 贴纸（未确认草稿）：语音段/文字段持续追加，点「完成」才保存
     sticker: null,            // { rev, segments: [{id, source, text, pending}] }
@@ -78,10 +80,7 @@ Page({
 
   onUnload() {
     this._forceStop()
-    if (this._audio) {
-      this._audio.destroy()
-      this._audio = null
-    }
+    if (this.data.playingId) audioUtil.stopPlayback()
   },
 
   _vibrate(type) {
@@ -143,6 +142,19 @@ Page({
       this._stopUi()
       this._pendingStop = false
       if (res && res.tempFilePath) {
+        // 上滑/下滑区域松手：直接删除 / 直接存为声音灵感（不走识别链路）
+        if (this._pendingStopDiscard) {
+          this._pendingStopDiscard = false
+          this._resetStage()
+          this._vibrate('medium')
+          wx.showToast({ title: '已删除', icon: 'none' })
+          return
+        }
+        if (this._pendingStopInspire) {
+          this._pendingStopInspire = false
+          this._directSaveInspiration(res.tempFilePath, res.duration)
+          return
+        }
         // duration 缺失时用计时器秒数兜底，避免正常录音被误剪
         const durMs = res.duration || this.data.recordSeconds * 1000
         if (durMs >= SHORT_RECORD_MS) {
@@ -204,6 +216,8 @@ Page({
   _beginStart() {
     const r = getRecorder()
     try {
+      // 录制互斥：停止可能在播的回听，避免回听继续响、更避免被录进麦克风
+      audioUtil.stopPlayback()
       // 从贴纸内小麦克风录音时收起键盘，避免输入法挡住录音状态
       if (this.data.stickerFocus) this.setData({ stickerFocus: false })
       r.start({
@@ -827,42 +841,24 @@ Page({
   playClip(e) {
     const id = e.currentTarget.dataset.id
     const fileID = e.currentTarget.dataset.file
-    if (this._playingId === id && this._audio) {
-      this._audio.stop()
-      this._playingId = ''
-      this.setData({ playingId: '' })
+    if (!fileID) return
+    if (this._playingId === id) {
+      audioUtil.stopPlayback()
       return
     }
-    if (!this._audio) {
-      this._audio = wx.createInnerAudioContext()
-      this._audio.onEnded(() => {
-        this._playingId = ''
-        this.setData({ playingId: '' })
-      })
-      this._audio.onError(() => {
-        // 云文件首次点播偶发解析失败：静默重试一次
-        if (!this._retried) {
-          this._retried = true
-          setTimeout(() => {
-            if (this._playingId === id && this._audio) {
-              this._audio.stop()
-              this._audio.src = fileID
-              this._audio.play()
-            }
-          }, 300)
-          return
-        }
-        this._playingId = ''
-        this.setData({ playingId: '' })
-        wx.showToast({ title: '无法播放，语音可能已过期', icon: 'none' })
-      })
-    }
-    this._retried = false
-    this._audio.stop()
-    this._audio.src = fileID // 云文件 ID 可直接播放
-    this._playingId = id
-    this.setData({ playingId: id })
-    this._audio.play()
+    wx.showLoading({ title: '加载中…', mask: true })
+    audioUtil.playCloudAudio(fileID, {
+      onEnded: () => { this._playingId = ''; this.setData({ playingId: '' }) },
+      onStop: () => { this._playingId = ''; this.setData({ playingId: '' }) },
+      onError: () => { this._playingId = ''; this.setData({ playingId: '' }) }
+    }).then(() => {
+      wx.hideLoading()
+      this._playingId = id
+      this.setData({ playingId: id })
+    }).catch(() => {
+      wx.hideLoading()
+      wx.showToast({ title: '加载失败，请检查网络', icon: 'none' })
+    })
   },
 
   reidentifyClip(e) {
@@ -1101,14 +1097,74 @@ Page({
 
   /* ---------- 事件转发 ---------- */
 
-  onRecordStart() { this._startRecord() },
+  // 起点 Y 兼容两种来源：组件事件 detail.y / 原生 touch touches[0]
+  _touchYOf(e) {
+    return (e.touches && e.touches[0] && e.touches[0].clientY) ||
+      (e.detail && e.detail.y) || 0
+  },
+
+  onRecordStart(e) {
+    this._touchY = this._touchYOf(e)
+    this._zone = ''
+    this.setData({ recZone: '' })
+    this._startRecord()
+  },
+
+  onRecordMove(e) {
+    if (this.data.stage !== 'recording') return
+    const y = this._touchYOf(e)
+    if (!y) return
+    const dy = y - (this._touchY || y)
+    let zone = ''
+    if (dy <= -ZONE_SLIDE_PX) zone = 'inspire'   // 上滑：存为声音灵感
+    else if (dy >= ZONE_SLIDE_PX) zone = 'discard' // 下滑：删除
+    if (zone !== this._zone) {
+      this._zone = zone
+      if (zone) this._vibrate('light')
+      this.setData({ recZone: zone })
+    }
+  },
+
   onRecordStop() {
+    const zone = this._zone || ''
+    this._zone = ''
+    this.setData({ recZone: '' })
+    if (zone === 'discard') {
+      this._pendingStopDiscard = true
+      this._stopRecord()
+      return
+    }
+    if (zone === 'inspire') {
+      this._pendingStopInspire = true
+      this._stopRecord()
+      return
+    }
     // 松手：已在录音则停；还在启动中则标记，等 onStart 后延迟停（保证文件有效）
     if (this.data.stage === 'recording') {
       this._stopRecord()
     } else {
       this._pendingStop = true
     }
+  },
+
+  // 上滑松手：录音直接存为声音灵感（本地量化幅度 → 上传 → 起标题），不经 ASR
+  _directSaveInspiration(tempFilePath, durationMs) {
+    this._resetStage()
+    this._lastDuration = durationMs ? Math.round(durationMs / 1000) : 0
+    audioUtil.computeAmps(tempFilePath, 48, (amps) => {
+      this._lastAmps = amps
+      wx.showLoading({ title: '保存中…', mask: true })
+      wx.cloud.uploadFile({
+        cloudPath: 'audio/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.wav',
+        filePath: tempFilePath
+      }).then((up) => {
+        wx.hideLoading()
+        this._promptInspirationTitle(up.fileID, this._lastAmps, this._lastDuration)
+      }).catch(() => {
+        wx.hideLoading()
+        wx.showToast({ title: '网络不佳，这段录音未保存', icon: 'none', duration: 2200 })
+      })
+    })
   },
 
   goHistory() { wx.switchTab({ url: '/pages/history/history' }) },

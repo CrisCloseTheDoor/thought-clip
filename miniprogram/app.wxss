@@ -73,6 +73,38 @@ page {
   margin-top: 6rpx;
 }
 
+/* 自绘开关（全局通用：设置页保留原声 / 反馈历史上下文等） */
+.toggle {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 92rpx;
+  height: 52rpx;
+  padding: 0 5rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1rpx solid rgba(255, 255, 255, 0.22);
+  flex-shrink: 0;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.toggle-knob {
+  width: 40rpx;
+  height: 40rpx;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.toggle.on {
+  background: var(--gold);
+  border-color: var(--gold);
+}
+/* 行程 = 内容宽(92-2-10) - 滑块40 = 40rpx */
+.toggle.on .toggle-knob {
+  transform: translateX(40rpx);
+}
+
 /* 空态 */
 .empty {
   text-align: center;

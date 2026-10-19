@@ -100,43 +100,8 @@
   flex: 1;
   padding-right: 20rpx;
 }
-.subscribe-btn {
-  width: 100%;
-  margin: 8rpx 0 16rpx;
-  box-sizing: border-box;
-}
 
-/* 自绘开关（深色背景下对比清晰；flex 居中，杜绝滑块错位） */
-.toggle {
-  display: flex;
-  align-items: center;
-  box-sizing: border-box;
-  width: 92rpx;
-  height: 52rpx;
-  padding: 0 5rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.16);
-  border: 1rpx solid rgba(255, 255, 255, 0.22);
-  flex-shrink: 0;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-.toggle-knob {
-  width: 40rpx;
-  height: 40rpx;
-  border-radius: 50%;
-  background: #FFFFFF;
-  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.35);
-  flex-shrink: 0;
-  transition: transform 0.2s ease;
-}
-.toggle.on {
-  background: var(--gold);
-  border-color: var(--gold);
-}
-/* 行程 = 内容宽(92-2-10) - 滑块40 = 40rpx */
-.toggle.on .toggle-knob {
-  transform: translateX(40rpx);
-}
+/* 自绘开关样式已提取至 app.wxss（全局） */
 
 /* 回收站 */
 .bin-empty {

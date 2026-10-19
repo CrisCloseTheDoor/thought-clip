@@ -1,4 +1,4 @@
-<view class="entry-card {{entry.kind === 'voice' ? 'voice-card' : ''}}" bindtap="onTap">
+<view class="entry-card {{entry.kind === 'voice' ? 'voice-card' : ''}}" bindtap="onTap" bindlongpress="onLongPress">
   <!-- 声音灵感变体：标题 + 量化幅度 + 内联回听 -->
   <block wx:if="{{entry.kind === 'voice'}}">
     <view class="type-bar music"></view>

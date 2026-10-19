@@ -2,6 +2,7 @@ const fmt = require('../../utils/format')
 const stats = require('../../utils/stats')
 const { typeMeta } = require('../../utils/types')
 const config = require('../../config')
+const audioUtil = require('../../utils/audio')
 
 const FB_CHIPS = [
   { k: 'digest', label: '提炼要点' },
@@ -23,9 +24,11 @@ Page({
     editText: '',
     // AI 反馈
     fbChips: FB_CHIPS,
-    feedbacks: [],     // [{ kind, label, text, timeText }] 最新在前
+    feedbacks: [],     // [{ kind, label, text, timeText, sources }] 最新在前
     fbLoading: false,
-    aiEnabled: false
+    aiEnabled: false,
+    // 反馈时检索历史上下文（全局开关，开启需同意）
+    ctxEnabled: false
   },
 
   onLoad(options) {
@@ -35,10 +38,12 @@ Page({
   },
 
   onUnload() {
-    if (this._audio) {
-      this._audio.destroy()
-      this._audio = null
-    }
+    if (this.data.voicePlaying || this.data.playingVoice) audioUtil.stopPlayback()
+  },
+
+  onHide() {
+    // 进入更深页面（如点引用来源）时停止本页回听
+    if (this.data.voicePlaying || this.data.playingVoice) audioUtil.stopPlayback()
   },
 
   load() {
@@ -76,7 +81,14 @@ Page({
             label: (FB_CHIPS.find((c) => c.k === f.kind) || {}).label || 'AI 反馈',
             text: f.text || '',
             timeText: fmt.hm(fmt.toDate(f.createdAt)),
-            id: fmt.toDate(f.createdAt).getTime() // 删除反馈时定位用
+            id: fmt.toDate(f.createdAt).getTime(), // 删除反馈时定位用
+            sources: (f.sources || []).map((s) => ({
+              id: s.id,
+              label: s.dayKey
+                ? (parseInt(s.dayKey.slice(5, 7), 10) + '月' + parseInt(s.dayKey.slice(8, 10), 10) + '日')
+                : '记录',
+              snippet: (s.snippet || '').slice(0, 24)
+            }))
           })),
           editText: e.text || e.raw
         })
@@ -101,9 +113,48 @@ Page({
         const doc = res.data && res.data[0]
         const ok = !!(doc && ((doc.apiMode === 'own' && doc.apiKey) ||
           (doc.apiMode === 'dev' && doc.devConsent)))
-        this.setData({ aiEnabled: ok })
+        this.setData({ aiEnabled: ok, ctxEnabled: !!(doc && doc.ctxEnabled) })
       })
-      .catch(() => this.setData({ aiEnabled: false }))
+      .catch(() => this.setData({ aiEnabled: false, ctxEnabled: false }))
+  },
+
+  /* ---------- 历史上下文开关（全局，存 users.ctxEnabled） ---------- */
+
+  onCtxToggle() {
+    if (!this.data.aiEnabled) {
+      this._guideEnableAi()
+      return
+    }
+    const v = !this.data.ctxEnabled
+    if (!v) {
+      this.setData({ ctxEnabled: false })
+      this._saveCtx(false)
+      return
+    }
+    wx.showModal({
+      title: '检索历史上下文',
+      content: '开启后，每次反馈会自动检索你的相关历史记录，便于AI引擎生成更了解你的回答。可随时关闭。',
+      confirmText: '开启',
+      cancelText: '暂不',
+      confirmColor: '#E8B44B',
+      success: (r) => {
+        if (!r.confirm) return
+        this.setData({ ctxEnabled: true })
+        this._saveCtx(true)
+      }
+    })
+  },
+
+  _saveCtx(v) {
+    const db = wx.cloud.database()
+    db.collection('users').where({ _openid: '{openid}' }).limit(1).get()
+      .then((res) => {
+        const doc = res.data && res.data[0]
+        const data = { ctxEnabled: v, updatedAt: new Date() }
+        if (doc) return db.collection('users').doc(doc._id).update({ data })
+        return db.collection('users').add({ data })
+      })
+      .catch(() => { /* 保存失败不阻断，下次开关重试 */ })
   },
 
   _guideEnableAi() {
@@ -128,7 +179,7 @@ Page({
     this.setData({ fbLoading: true })
     wx.cloud.callFunction({
       name: config.CLOUD_FUNCTIONS.SAVE_ENTRY,
-      data: { feedback: true, kind, entryId: this.data.id }
+      data: { feedback: true, kind, entryId: this.data.id, useCtx: !!this.data.ctxEnabled }
     }).then((res) => {
       this.setData({ fbLoading: false })
       const r = res.result || {}
@@ -146,6 +197,12 @@ Page({
       this.setData({ fbLoading: false })
       wx.showToast({ title: '网络不佳，稍后再试', icon: 'none' })
     })
+  },
+
+  // 点击引用来源 → 跳到对应记录详情
+  goSource(e) {
+    const id = e.currentTarget.dataset.id
+    if (id) wx.navigateTo({ url: '/pages/detail/detail?id=' + id })
   },
 
   // 删除某条反馈（不满意时可删掉重新生成）
@@ -171,38 +228,22 @@ Page({
       wx.showToast({ title: '没有可播放的音频', icon: 'none' })
       return
     }
-    if (this._audio && this.data.voicePlaying) {
-      this._audio.stop()
-      this.setData({ voicePlaying: false })
+    if (this.data.voicePlaying) {
+      audioUtil.stopPlayback()
       return
     }
-    if (!this._audio) {
-      this._audio = wx.createInnerAudioContext()
-      this._audio.onEnded(() => this.setData({ voicePlaying: false }))
-      this._audio.onError(() => {
-        // 云文件首次点播偶发解析失败：静默重试一次
-        if (!this._retried) {
-          this._retried = true
-          const f = this.data.entry && this.data.entry.audioFileIDs &&
-            this.data.entry.audioFileIDs[0]
-          setTimeout(() => {
-            if (this.data.voicePlaying && this._audio && f) {
-              this._audio.stop()
-              this._audio.src = f
-              this._audio.play()
-            }
-          }, 300)
-          return
-        }
-        this.setData({ voicePlaying: false })
-        wx.showToast({ title: '无法播放', icon: 'none' })
-      })
-    }
-    this._retried = false
-    this._audio.stop()
-    this._audio.src = e.audioFileIDs[0]
-    this.setData({ voicePlaying: true })
-    this._audio.play()
+    wx.showLoading({ title: '加载中…', mask: true })
+    audioUtil.playCloudAudio(e.audioFileIDs[0], {
+      onEnded: () => this.setData({ voicePlaying: false }),
+      onStop: () => this.setData({ voicePlaying: false }),
+      onError: () => this.setData({ voicePlaying: false })
+    }).then(() => {
+      wx.hideLoading()
+      this.setData({ voicePlaying: true })
+    }).catch(() => {
+      wx.hideLoading()
+      wx.showToast({ title: '加载失败，请检查网络', icon: 'none' })
+    })
   },
 
   renameInspire() {
@@ -261,42 +302,23 @@ Page({
 
   playVoice(e) {
     const fileID = e.currentTarget.dataset.file
-    if (this._audio && this.data.playingVoice === fileID) {
-      this._audio.stop()
-      this._playing = ''
-      this.setData({ playingVoice: '' })
+    if (!fileID) return
+    if (this.data.playingVoice === fileID) {
+      audioUtil.stopPlayback()
       return
     }
-    if (!this._audio) {
-      this._audio = wx.createInnerAudioContext()
-      this._audio.onEnded(() => {
-        this._playing = ''
-        this.setData({ playingVoice: '' })
-      })
-      this._audio.onError(() => {
-        // 云文件首次点播偶发解析失败：静默重试一次
-        if (!this._retried) {
-          this._retried = true
-          setTimeout(() => {
-            if (this.data.playingVoice === fileID && this._audio) {
-              this._audio.stop()
-              this._audio.src = fileID
-              this._audio.play()
-            }
-          }, 300)
-          return
-        }
-        this._playing = ''
-        this.setData({ playingVoice: '' })
-        wx.showToast({ title: '无法播放', icon: 'none' })
-      })
-    }
-    this._retried = false
-    this._audio.stop()
-    this._audio.src = fileID // 云文件 ID 可直接播放
-    this._playing = fileID
-    this.setData({ playingVoice: fileID })
-    this._audio.play()
+    wx.showLoading({ title: '加载中…', mask: true })
+    audioUtil.playCloudAudio(fileID, {
+      onEnded: () => this.setData({ playingVoice: '' }),
+      onStop: () => this.setData({ playingVoice: '' }),
+      onError: () => this.setData({ playingVoice: '' })
+    }).then(() => {
+      wx.hideLoading()
+      this.setData({ playingVoice: fileID })
+    }).catch(() => {
+      wx.hideLoading()
+      wx.showToast({ title: '加载失败，请检查网络', icon: 'none' })
+    })
   },
 
   toggleRaw() {

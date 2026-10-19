@@ -33,8 +33,9 @@ const SYSTEM_PROMPT = `你是用户的个人记录整理助手。将口语化、
 3. 保留第一人称和日常语气，不过度书面化；
 4. 分类 type：decision=做了决定或选择；reflection=思考/复盘/观点/情绪；fragment=日常记录/随想/待办；
 5. 提取最多3个关键词 keywords；
-6. 原文少于8字或内容无意义时，text 原样返回、type 用 fragment。
-输出格式：{"text":"整理后文本","type":"decision|reflection|fragment","keywords":["词1","词2"]}`
+6. 原文少于8字或内容无意义时，text 原样返回、type 用 fragment；
+7. 从内容中抽取 0-3 个结构化事件 events：type 取 decision=做了什么决定 / goal=想达成什么 / event=发生了什么事 / mood=情绪状态；subject、summary 各不超过50字；没有可抽取的返回空数组。
+输出格式：{"text":"整理后文本","type":"decision|reflection|fragment","keywords":["词1","词2"],"events":[{"type":"decision","subject":"主题","summary":"一句话概述","outcome":""}]}`
 
 // AI 反馈（按需，用户主动触发）：四类，一律限 150 字内
 const FEEDBACK_SYSTEM = '你是用户的私人思考伙伴。回复用简体中文，语气自然克制，严禁说教。严格遵守字数限制。'
@@ -43,6 +44,56 @@ const FEEDBACK_META = {
   challenge: '你是用户的思考陪练。针对这段记录，指出 1-2 个最值得质疑的假设或盲点，并给出简短的反方视角或追问。语气坦诚友善，不居高临下。总字数不超过150字。直接输出内容。',
   action: '从这段记录中提炼最多 3 条可执行的小步骤，每条以动词开头、单步可完成。若确实没有可行动的内容，请诚实说明。总字数不超过150字。直接输出列表。',
   companion: '你是温柔的倾听者。用户刚写下一段心事或碎碎念。先接住情绪（不评判、不建议、不诊断），再以一句关心的开放式问题结尾。总字数不超过150字。直接输出内容。'
+}
+
+// 历史上下文：单次反馈最多携带的记录条数（起步期 30，扩量改此处）
+const CTX_LIMIT = 30
+// 历史记录的软约束（用户指定措辞基调：优先参考而非硬性限定，避免回答僵化）
+const CTX_RULE = '以上个人历史记录请作为优先和重点参考的信息，引用处标注 [n]（可在行文中自然带出，如"你之前提到过…[1]"）；描述时间关系时直接采用已标注的相对天数（如"45天前"），不要自行推算或更改年份；找不到依据的，应避免擅自编造。'
+
+function escapeReg(s) {
+  return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// 检索与当前记录相关的历史上下文（排除自身与回收站），返回编号行与来源。
+// 检索输入 = 时间 + 文字：一次轻量 LLM 调用统一抽取关键词与可选时间范围
+async function gatherContext(openid, entry, content, apiKey) {
+  let kws = []
+  let days = 0
+  try {
+    const hint = (Array.isArray(entry.keywords) ? entry.keywords : []).filter(Boolean).join('、')
+    const kc = await callDeepSeek(apiKey,
+      '从这段个人记录中抽取用于检索历史记录的关键词（名词优先，2-5个）。' +
+      '若内容提到时间限定（如"最近/上周/上个月/今年"），把对应天数写入 days（最近N天），没有时间限定则 days 为 0。' +
+      '只输出 json：{"keywords":["词1","词2"],"days":0}' +
+      (hint ? '\n\n（记录自带关键词可供参考：' + hint + '）' : '') +
+      '\n\n' + content, 120)
+    const kd = JSON.parse(kc)
+    if (Array.isArray(kd.keywords)) kws = kd.keywords.map(String).filter(Boolean).slice(0, 5)
+    if (typeof kd.days === 'number' && kd.days > 0 && kd.days <= 3650) days = Math.round(kd.days)
+  } catch (e) { /* 抽取失败则本次无上下文 */ }
+  if (!kws.length) return { lines: [], sources: [] }
+
+  const _ = db.command
+  const re = db.RegExp({ regexp: kws.map(escapeReg).join('|'), options: 'i' })
+  const cond = [
+    { _openid: openid, deletedAt: _.exists(false), _id: _.neq(entry._id || '') },
+    _.or([{ text: re }, { raw: re }, { keywords: re }])
+  ]
+  // 有时间限定时按时间窗过滤（如"上个月"→ 近 30 天）
+  if (days > 0) cond.push({ createdAt: _.gte(new Date(Date.now() - days * 86400000)) })
+  const res = await db.collection('entries').where(_.and(cond)).orderBy('createdAt', 'desc').limit(CTX_LIMIT).get()
+
+  const hits = res.data || []
+  const lines = []
+  const sources = []
+  hits.forEach((e, i) => {
+    const snip = String(e.text || e.raw || '').replace(/\s+/g, ' ').slice(0, 200)
+    const rel = relLabel(e.dayKey)
+    lines.push('[' + (i + 1) + '] ' + (rel ? rel + '（' + e.dayKey + '）' : (e.dayKey || '')) + ' ' + snip)
+    sources.push({ id: e._id, dayKey: e.dayKey || '', snippet: snip.slice(0, 60) })
+  })
+  return { lines, sources }
 }
 
 function postJson(url, headers, body) {
@@ -95,13 +146,22 @@ async function callDeepSeek(apiKey, text, maxTokens, systemPrompt, opts) {
 }
 
 // 解析并校验 AI 返回的 JSON
+const EVENT_TYPES = ['decision', 'goal', 'event', 'mood']
 function parseResult(content) {
   try {
     const data = JSON.parse(content)
     const type = ['decision', 'reflection', 'fragment'].indexOf(data.type) >= 0 ? data.type : 'fragment'
     const keywords = Array.isArray(data.keywords) ? data.keywords.slice(0, 3).map(String).filter(Boolean) : []
+    const events = Array.isArray(data.events)
+      ? data.events.filter((e) => e && typeof e === 'object').map((e) => ({
+        type: EVENT_TYPES.indexOf(e.type) >= 0 ? e.type : 'event',
+        subject: String(e.subject || '').slice(0, 50),
+        summary: String(e.summary || '').slice(0, 50),
+        outcome: String(e.outcome || '').slice(0, 50)
+      })).filter((e) => e.subject || e.summary).slice(0, 3)
+      : []
     const text = typeof data.text === 'string' ? data.text.trim() : ''
-    return text ? { text, type, keywords } : null
+    return text ? { text, type, keywords, events } : null
   } catch (e) {
     return null
   }
@@ -117,6 +177,16 @@ function dayKeyOfTs(ts) {
 // 客户端 dayKey 优先，非法时服务端兜底
 function resolveDayKey(v, ts) {
   return (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : dayKeyOfTs(ts)
+}
+
+// 相对时间（东八区）：把"哪天"换算成"N天前"，避免让 LLM 做年份心算
+function relLabel(dayKey) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dayKey || '')) return ''
+  const n = Math.round((Date.parse(dayKeyOfTs(Date.now())) - Date.parse(dayKey)) / 86400000)
+  if (n <= 0) return '今天'
+  if (n === 1) return '昨天'
+  if (n < 0) return dayKey
+  return n + '天前'
 }
 
 // 双模式 Key 解析
@@ -201,9 +271,30 @@ exports.main = async (event) => {
     const content = (entry.text || entry.raw || '').trim()
     if (!content) return { error: 'empty' }
 
+    // 历史上下文检索（用户已开启并授权时）
+    let ctxLines = []
+    let sources = []
+    if (event.useCtx) {
+      try {
+        const ctx = await gatherContext(OPENID, entry, content, apiKey)
+        ctxLines = ctx.lines
+        sources = ctx.sources
+      } catch (e) {
+        console.warn('上下文检索失败，按无上下文继续', e.message)
+      }
+    }
+
     let text = ''
     try {
-      const prompt = '【任务】' + FEEDBACK_META[kind] + '\n\n【用户记录】\n' + content
+      // 让 AI 知道"今天是哪天"与"这句话是哪天说的"；相对天数由代码算好，LLM 不做年份心算
+      const entryDay = entry.dayKey || dayKeyOfTs(new Date(entry.createdAt).getTime())
+      const entryRel = relLabel(entryDay)
+      let prompt = '【任务】' + FEEDBACK_META[kind] +
+        '\n\n【当前日期】' + dayKeyOfTs(Date.now()) +
+        '\n【用户记录】（记录于 ' + entryDay + (entryRel ? ' · ' + entryRel : '') + '）\n' + content
+      if (ctxLines.length) {
+        prompt += '\n\n【个人历史记录】\n' + ctxLines.join('\n') + '\n\n' + CTX_RULE
+      }
       text = (await callDeepSeek(apiKey, prompt, 400, FEEDBACK_SYSTEM,
         { plain: true, temperature: kind === 'companion' || kind === 'challenge' ? 0.6 : 0.3 })).trim()
     } catch (e) {
@@ -213,6 +304,7 @@ exports.main = async (event) => {
     if (!text) return { error: 'ai-empty' }
 
     const fb = { kind, text: text.slice(0, 400), createdAt: new Date() }
+    if (sources.length) fb.sources = sources
     const list = (Array.isArray(entry.feedbacks) ? entry.feedbacks : []).concat(fb).slice(-5)
     try {
       await db.collection('entries').doc(event.entryId).update({ data: { feedbacks: list } })
@@ -258,7 +350,7 @@ exports.main = async (event) => {
   const apiKey = await resolveKey(OPENID, null)
   if (apiKey && raw.length >= 8) {
     try {
-      const content = await callDeepSeek(apiKey, raw, 500)
+      const content = await callDeepSeek(apiKey, raw, 700)
       const parsed = parseResult(content)
       if (parsed && parsed.text) {
         result = Object.assign({}, parsed, { refined: true })
@@ -285,6 +377,7 @@ exports.main = async (event) => {
     dayKey: resolveDayKey(event.dayKey, now.getTime()),
     createdAt: now
   }
+  if (result.events && result.events.length) doc.events = result.events
   if (audioFileIDs.length) doc.audioFileIDs = audioFileIDs
   const addRes = await db.collection('entries').add({ data: doc })
   doc._id = addRes._id

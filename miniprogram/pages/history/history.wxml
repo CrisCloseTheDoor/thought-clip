@@ -1,4 +1,4 @@
-<view class="page history-page">
+<view class="page history-page" bindtap="clearDelete">
 
   <view class="page-title">历史记录</view>
 
@@ -65,13 +65,16 @@
 
   <view class="day-group" wx:for="{{groups}}" wx:key="dayKey" wx:for-item="group">
     <view class="day-head">{{group.label}} · {{group.items.length}} 条</view>
-    <entry-card
-      wx:for="{{group.items}}"
-      wx:key="_id"
-      entry="{{item}}"
-      bind:tapentry="goDetail"
-      bind:tapkeyword="onKeywordTap"
-    />
+    <view class="h-item" wx:for="{{group.items}}" wx:key="_id">
+      <entry-card
+        entry="{{item}}"
+        bind:tapentry="goDetail"
+        bind:tapkeyword="onKeywordTap"
+        bind:longpressentry="onCardLongPress"
+      />
+      <view class="h-del {{deleteId === item._id ? 'show' : ''}}"
+        catchtap="deleteFromList" data-id="{{item._id}}">删除</view>
+    </view>
   </view>
 
   <view class="empty" wx:if="{{!groups.length && !loading}}">{{kw || type ? '没有匹配的记录，换个关键词试试。' : '还没有记录，去「记录」页按住按钮说点什么吧。'}}</view>

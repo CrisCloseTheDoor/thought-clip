@@ -1,6 +1,7 @@
 <view
   class="mic-wrap {{recording ? 'recording' : ''}} {{disabled ? 'disabled' : ''}}"
   bindtouchstart="onTouchStart"
+  catchtouchmove="onTouchMove"
   bindtouchend="onTouchEnd"
   bindtouchcancel="onTouchCancel"
 >

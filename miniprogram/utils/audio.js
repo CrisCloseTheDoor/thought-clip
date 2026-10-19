@@ -52,4 +52,108 @@ function computeAmps(filePath, buckets, cb) {
   })
 }
 
-module.exports = { computeAmps }
+// ---------- 全局音频播放器（全 app 唯一播放出口） ----------
+// 设计要点（对应三个真机问题的根治）：
+// 1. 互斥：任何新播放自动停止上一个（跨页面生效）——不会出现多个声音同时播
+// 2. 录制互斥：开始录音前调用 stopPlayback()——回听不会继续、也不会被录入麦克风
+// 3. 每次播放销毁重建 InnerAudioContext——规避复用旧上下文在录音会话后偶发的断续
+// 4. 整段下载到本地播放 + 会话缓存；缓存路径用前校验，被系统清理则自动重下
+let _ctx = null
+let _cur = null // { fileID, handlers, retried }
+const _fileCache = {}
+
+function _destroyCtx() {
+  if (_ctx) {
+    try { _ctx.destroy() } catch (e) { /* noop */ }
+    _ctx = null
+  }
+}
+
+// 停止当前播放；通过 onStop 通知原调用方复位界面状态
+function stopPlayback() {
+  if (!_cur) return
+  const h = _cur.handlers
+  _cur = null
+  _destroyCtx()
+  if (h && h.onStop) h.onStop()
+}
+
+function _start(fileID, path, handlers, retried) {
+  // 下载期间若已被其他播放占位（快速连点不同音频的竞态），先通知旧调用方复位
+  if (_cur && _cur.fileID !== fileID) {
+    const old = _cur.handlers
+    _cur = null
+    if (old && old.onStop) old.onStop()
+  }
+  _destroyCtx()
+  _ctx = wx.createInnerAudioContext()
+  // 部分机型上"新建上下文后立即 play()"存在起播竞态，autoplay 由系统择机起播更稳
+  _ctx.autoplay = true
+  _cur = { fileID, handlers, retried: !!retried }
+  _ctx.onEnded(() => {
+    const h = _cur && _cur.handlers
+    _cur = null
+    _destroyCtx()
+    if (h && h.onEnded) h.onEnded()
+  })
+  _ctx.onError((err) => {
+    console.warn('[audio] onError', fileID, 'retried=', !!(_cur && _cur.retried), err)
+    if (!_cur || _cur.fileID !== fileID) return
+    if (!_cur.retried) {
+      // 本地文件偶发未就绪：静默重试一次（retried 透传，防止无限重试）
+      const cur = _cur
+      setTimeout(() => {
+        if (_cur === cur) _start(fileID, path, handlers, true)
+      }, 300)
+      return
+    }
+    const h = _cur.handlers
+    _cur = null
+    _destroyCtx()
+    if (h && h.onError) h.onError()
+    wx.showToast({ title: '无法播放', icon: 'none' })
+  })
+  _ctx.src = path
+}
+
+function _ensureLocal(fileID) {
+  const cached = _fileCache[fileID]
+  if (cached) {
+    try {
+      wx.getFileSystemManager().accessSync(cached)
+      return Promise.resolve(cached)
+    } catch (e) {
+      delete _fileCache[fileID] // 临时文件已被系统清理，重新下载
+    }
+  }
+  return new Promise((resolve, reject) => {
+    wx.cloud.downloadFile({
+      fileID,
+      success: (res) => {
+        _fileCache[fileID] = res.tempFilePath
+        resolve(res.tempFilePath)
+      },
+      fail: reject
+    })
+  })
+}
+
+// 播放云存储音频。handlers = { onEnded, onStop, onError }，
+// 被新播放顶掉或手动停止时回调 onStop，调用方据此复位按钮状态。
+function playCloudAudio(fileID, handlers) {
+  return new Promise((resolve, reject) => {
+    if (!fileID) {
+      reject(new Error('no fileID'))
+      return
+    }
+    stopPlayback() // 互斥：先停掉任何在播音频
+    _ensureLocal(fileID)
+      .then((path) => {
+        _start(fileID, path, handlers || {})
+        resolve()
+      })
+      .catch(reject)
+  })
+}
+
+module.exports = { computeAmps, playCloudAudio, stopPlayback }

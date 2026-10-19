@@ -565,6 +565,51 @@
   background: var(--card);
 }
 
+/* 录音中滑区提示（上滑存灵感/下滑删除） */
+.rec-zone {
+  position: fixed;
+  left: 50%;
+  bottom: 300rpx;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 18rpx 36rpx;
+  background: rgba(28, 31, 38, 0.95);
+  border: 1rpx solid rgba(255, 255, 255, 0.12);
+  border-radius: 20rpx;
+  z-index: 40;
+  animation: fadeUp 0.25s ease;
+  max-width: 90vw;
+}
+.rz-icon {
+  font-size: 34rpx;
+  line-height: 1;
+  color: var(--text-dim);
+}
+.rz-text {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.rec-zone.z-inspire {
+  border-color: rgba(79, 209, 197, 0.7);
+  box-shadow: 0 0 30rpx rgba(79, 209, 197, 0.15);
+}
+.rec-zone.z-inspire .rz-icon,
+.rec-zone.z-inspire .rz-text {
+  color: var(--teal);
+}
+.rec-zone.z-discard {
+  border-color: rgba(240, 102, 110, 0.7);
+  box-shadow: 0 0 30rpx rgba(240, 102, 110, 0.15);
+}
+.rec-zone.z-discard .rz-icon,
+.rec-zone.z-discard .rz-text {
+  color: var(--danger);
+}
+
 /* 时间线 */
 .section-title {
   display: flex;

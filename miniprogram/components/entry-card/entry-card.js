@@ -1,5 +1,6 @@
 const { hm, toDate } = require('../../utils/format')
 const { typeMeta } = require('../../utils/types')
+const audioUtil = require('../../utils/audio')
 
 Component({
   properties: {
@@ -36,10 +37,7 @@ Component({
 
   lifetimes: {
     detached() {
-      if (this._audio) {
-        this._audio.destroy()
-        this._audio = null
-      }
+      if (this.data.playing) audioUtil.stopPlayback()
     }
   },
 
@@ -50,51 +48,42 @@ Component({
       }
     },
 
+    // 长按卡片：交给页面弹删除按钮（历史页）
+    onLongPress() {
+      if (this.properties.entry && this.properties.entry._id) {
+        this.triggerEvent('longpressentry', { id: this.properties.entry._id })
+      }
+    },
+
     // 点击关键词标签：不进入详情，交给页面去触发搜索
     onKeyword(e) {
       const kw = e.currentTarget.dataset.keyword
       if (kw) this.triggerEvent('tapkeyword', { keyword: kw })
     },
 
-    // 声音灵感：卡片内直接回听（不打断浏览）
+    // 声音灵感：卡片内直接回听（走全局单播放器：新播放自动停上一个）
     onPlayTap() {
       const e = this.properties.entry
       if (!e || !e.audioFileIDs || !e.audioFileIDs.length) {
         wx.showToast({ title: '没有可播放的音频', icon: 'none' })
         return
       }
-      if (this._audio && this.data.playing) {
-        this._audio.stop()
-        this.setData({ playing: false })
+      if (this.data.playing) {
+        audioUtil.stopPlayback()
         return
       }
-      if (!this._audio) {
-        this._audio = wx.createInnerAudioContext()
-        this._audio.onEnded(() => this.setData({ playing: false }))
-        this._audio.onError(() => {
-          // 云文件首次点播偶发解析失败：静默重试一次（即用户「点第二次才响」的场景）
-          if (!this._retried) {
-            this._retried = true
-            const f = this.properties.entry && this.properties.entry.audioFileIDs &&
-              this.properties.entry.audioFileIDs[0]
-            setTimeout(() => {
-              if (this.data.playing && this._audio && f) {
-                this._audio.stop()
-                this._audio.src = f
-                this._audio.play()
-              }
-            }, 300)
-            return
-          }
-          this.setData({ playing: false })
-          wx.showToast({ title: '无法播放', icon: 'none' })
-        })
-      }
-      this._retried = false
-      this._audio.stop()
-      this._audio.src = e.audioFileIDs[0]
-      this.setData({ playing: true })
-      this._audio.play()
+      wx.showLoading({ title: '加载中…', mask: true })
+      audioUtil.playCloudAudio(e.audioFileIDs[0], {
+        onEnded: () => this.setData({ playing: false }),
+        onStop: () => this.setData({ playing: false }),
+        onError: () => this.setData({ playing: false })
+      }).then(() => {
+        wx.hideLoading()
+        this.setData({ playing: true })
+      }).catch(() => {
+        wx.hideLoading()
+        wx.showToast({ title: '加载失败，请检查网络', icon: 'none' })
+      })
     }
   }
 })

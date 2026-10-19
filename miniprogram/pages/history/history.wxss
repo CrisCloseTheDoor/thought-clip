@@ -186,6 +186,33 @@
   margin-bottom: 30rpx;
 }
 
+/* 长按弹出的删除按钮 */
+.h-item {
+  position: relative;
+}
+.h-del {
+  position: absolute;
+  top: 16rpx;
+  right: 22rpx;
+  background: var(--danger);
+  color: #FFFFFF;
+  font-size: 24rpx;
+  font-weight: 600;
+  padding: 10rpx 30rpx;
+  border-radius: 999rpx;
+  box-shadow: 0 8rpx 24rpx rgba(240, 102, 110, 0.35);
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+  z-index: 5;
+}
+.h-del.show {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+
 .day-head {
   font-size: 26rpx;
   color: var(--text-dim);

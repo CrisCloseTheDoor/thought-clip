@@ -78,11 +78,24 @@
       <text>你想获得什么反馈？</text>
       <text class="fb-hint">按需反馈 · 随记录留存</text>
     </view>
+
     <view class="fb-chips">
       <view class="fb-chip {{item.k === 'companion' ? 'companion' : ''}}"
         wx:for="{{fbChips}}" wx:key="k" bindtap="askFeedback" data-kind="{{item.k}}">{{item.label}}</view>
     </view>
-    <view class="fb-loading" wx:if="{{fbLoading}}">正在思考…（约数秒）</view>
+
+    <!-- 历史上下文开关（全局，置于反馈类型下方） -->
+    <view class="ctx-row" bindtap="onCtxToggle">
+      <view class="ctx-body">
+        <view class="ctx-name">允许检索历史上下文</view>
+        <view class="ctx-desc">{{ctxEnabled ? '已开启 · 回答将参考相关历史记录' : '推荐开启 · 需同意'}}</view>
+      </view>
+      <view class="toggle {{ctxEnabled ? 'on' : ''}}">
+        <view class="toggle-knob"></view>
+      </view>
+    </view>
+
+    <view class="fb-loading" wx:if="{{fbLoading}}">{{ctxEnabled ? '正在检索历史上下文，为您生成更有质量的回答…' : '正在思考…（约数秒）'}}</view>
     <view class="fb-empty" wx:elif="{{!feedbacks.length}}">选一个，几秒后回来收反馈；不满意可删除重来</view>
     <view class="fb-list" wx:else>
       <view class="fb-item {{item.kind === 'companion' ? 'companion' : ''}}"
@@ -95,6 +108,13 @@
           </view>
         </view>
         <view class="fb-text">{{item.text}}</view>
+        <view class="fb-sources" wx:if="{{item.sources.length}}">
+          <view class="fb-src" wx:for="{{item.sources}}" wx:for-item="s" wx:key="id"
+            catchtap="goSource" data-id="{{s.id}}">
+            <text class="fb-src-date">{{s.label}}</text>
+            <text class="fb-src-snip">{{s.snippet}}</text>
+          </view>
+        </view>
       </view>
     </view>
   </view>

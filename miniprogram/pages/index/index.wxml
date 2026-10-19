@@ -126,7 +126,8 @@
         <input class="compose-input" value="{{typedDraft}}" placeholder="想到什么再补一句…" placeholder-class="compose-ph"
           confirm-type="done" bindinput="onTypedInput" bindconfirm="addTyped" focus="{{stickerFocus}}" />
         <view class="compose-mic {{stage === 'recording' ? 'recording' : ''}}"
-          bindtouchstart="onRecordStart" bindtouchend="onRecordStop" bindtouchcancel="onRecordStop">
+          bindtouchstart="onRecordStart" catchtouchmove="onRecordMove"
+          bindtouchend="onRecordStop" bindtouchcancel="onRecordStop">
           <view class="compose-mic-icon"></view>
         </view>
         <view class="compose-add" bindtap="addTyped">添加</view>
@@ -155,9 +156,17 @@
       recording="{{stage === 'recording'}}"
       disabled="{{stage === 'transcribing'}}"
       bind:recordstart="onRecordStart"
+      bind:recordmove="onRecordMove"
       bind:recordstop="onRecordStop"
     />
     <view class="type-entry" bindtap="openTyping">打字</view>
+  </view>
+
+  <!-- 录音中滑区提示：上滑存为声音灵感 · 下滑删除 -->
+  <view class="rec-zone {{recZone === 'inspire' ? 'z-inspire' : (recZone === 'discard' ? 'z-discard' : '')}}"
+    wx:if="{{stage === 'recording'}}">
+    <view class="rz-icon">{{recZone === 'discard' ? '↓' : '↑'}}</view>
+    <text class="rz-text">{{recZone === 'inspire' ? '松手存为声音灵感' : (recZone === 'discard' ? '松手删除' : '上滑存为声音灵感 · 下滑删除')}}</text>
   </view>
 
   <!-- 今日时间线 -->

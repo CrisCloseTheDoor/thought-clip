@@ -31,7 +31,18 @@
       </label>
     </radio-group>
 
-    <!-- 不使用AI 说明 -->
+    <!-- 反馈时检索历史上下文（需 AI 引擎） -->
+    <view class="switch-row" wx:if="{{apiMode !== 'none'}}">
+      <view class="switch-body">
+        <view class="mode-name">反馈时检索历史上下文</view>
+        <view class="mode-desc">{{ctxEnabled ? '已开启：反馈将自动参考相关历史记录' : '关闭：反馈仅基于当前记录；开启需同意'}}</view>
+      </view>
+      <view class="toggle {{ctxEnabled ? 'on' : ''}}" bindtap="toggleCtx">
+        <view class="toggle-knob"></view>
+      </view>
+    </view>
+
+    <!-- 原文记录模式说明 -->
     <view class="none-note" wx:if="{{apiMode === 'none'}}">
       记录将以原文直接保存，不经过任何 AI。如需整理、分类或 AI 反馈，可切换到上方两种模式。
     </view>

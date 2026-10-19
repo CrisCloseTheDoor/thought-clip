@@ -8,6 +8,13 @@ App({
   },
 
   onLaunch() {
+    // 音频会话独占：不与其他音频混音，录音与回听的会话切换行为更确定
+    // （修复真机上"录音一次后，所有回听都断断续续"的会话残留问题）
+    if (wx.setInnerAudioOption) {
+      try {
+        wx.setInnerAudioOption({ mixWithOther: false })
+      } catch (e) { /* 低版本忽略 */ }
+    }
     if (!wx.cloud) {
       console.error('当前基础库版本过低，请使用 2.2.3 及以上基础库以使用云能力')
       return

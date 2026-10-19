@@ -1,5 +1,6 @@
 const fmt = require('../../utils/format')
 const stats = require('../../utils/stats')
+const audioUtil = require('../../utils/audio')
 const { typeMeta } = require('../../utils/types')
 
 const PAGE_SIZE = 20
@@ -24,7 +25,8 @@ Page({
     streak: null,
     longestStreak: null,
     heatColumns: [],
-    heatTip: { show: false, key: '', text: '', x: 0, y: 0 }
+    heatTip: { show: false, key: '', text: '', x: 0, y: 0 },
+    deleteId: ''           // 长按弹删除按钮的记录
   },
 
   _page: 0,
@@ -32,6 +34,11 @@ Page({
   onShow() {
     this.reload()
     this._loadStats()
+  },
+
+  onHide() {
+    // 离开历史页（切 tab / 进详情）时停止卡片回听
+    audioUtil.stopPlayback()
   },
 
   reload() {
@@ -167,7 +174,8 @@ Page({
       .catch(() => { /* 统计失败不阻塞列表 */ })
   },
 
-  // 近 15 周热力图：列为周（周一开头），行为周一～周日
+  // 近 15 周热力图：列为周（周一开头），行为周一～周日；
+  // 窗口每天以"今天"为终点重算，最后一格恒为当天
   _buildHeat(days) {
     const map = {}
     days.forEach((d) => { map[d.dayKey] = d.count })
@@ -240,8 +248,51 @@ Page({
     if (this.data.heatTip.show) this.setData({ 'heatTip.show': false, 'heatTip.key': '' })
   },
 
+  /* ---------- 长按删除（进回收站） ---------- */
+
+  onCardLongPress(e) {
+    const id = e.detail && e.detail.id
+    if (!id || this.data.deleteId === id) return
+    try { wx.vibrateShort({ type: 'light' }) } catch (err) { /* noop */ }
+    this.setData({ deleteId: id })
+  },
+
+  clearDelete() {
+    if (this.data.deleteId) this.setData({ deleteId: '' })
+  },
+
+  deleteFromList(e) {
+    const id = e.currentTarget.dataset.id
+    if (!id) return
+    wx.showModal({
+      title: '删除这条记录？',
+      content: '将移入回收站，3 天内可在「设置 → 回收站」还原。',
+      confirmText: '删除',
+      confirmColor: '#F0666E',
+      success: (r) => {
+        this.setData({ deleteId: '' })
+        if (!r.confirm) return
+        audioUtil.stopPlayback()
+        wx.cloud.database().collection('entries').doc(id)
+          .update({ data: { deletedAt: new Date() } })
+          .then(() => {
+            stats.invalidate()
+            wx.showToast({ title: '已移入回收站', icon: 'none' })
+            this.reload()
+          })
+          .catch(() => wx.showToast({ title: '删除失败', icon: 'none' }))
+      }
+    })
+  },
+
   goDetail(e) {
     const id = e.detail && e.detail.id
+    // 删除按钮显示中时，首次点按先收起按钮（不跳转）
+    if (this.data.deleteId) {
+      const was = this.data.deleteId
+      this.clearDelete()
+      if (id === was) return
+    }
     if (id) wx.navigateTo({ url: '/pages/detail/detail?id=' + id })
   }
 })
