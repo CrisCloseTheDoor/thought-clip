@@ -1,6 +1,7 @@
 const config = require('../../config')
 const fmt = require('../../utils/format')
 const stats = require('../../utils/stats')
+const pending = require('../../utils/pending')
 
 Page({
   data: {
@@ -240,7 +241,11 @@ Page({
         const db = wx.cloud.database()
         db.collection('entries').doc(id).get()
           .then((res) => {
-            const audios = (res.data && res.data.audioFileIDs) || []
+            const doc = res.data || {}
+            // 处决本地离线队列中的同源副本：否则彻底删除后，
+            // 残留队列项会在下次补传时把这条记录"还魂"成新记录
+            if (doc.clientId) pending.dropByClientIds([doc.clientId])
+            const audios = doc.audioFileIDs || []
             audios.forEach((f) => {
               wx.cloud.callFunction({ name: 'asr', data: { discard: f } }).catch(() => {})
             })
@@ -357,6 +362,9 @@ Page({
       confirmColor: '#F0666E',
       success: (r) => {
         if (!r.confirm) return
+        // 先清空本地离线队列：清空全部也是硬删除，
+        // 残留队列项会在下次补传时把已清掉的记录逐条"还魂"
+        pending.clear()
         const db = wx.cloud.database()
         const next = () => {
           db.collection('entries').where({ _openid: '{openid}' }).limit(20).get()

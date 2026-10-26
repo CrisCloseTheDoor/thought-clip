@@ -55,6 +55,22 @@ function clear() {
   } catch (e) { /* noop */ }
 }
 
+// 删除记录时同步剔除队列中的同源副本：彻底删除后，
+// 残留的离线队列项会在下次补传时"还魂"成新记录（幂等键只认已存在的记录）
+function dropByClientIds(ids) {
+  if (!Array.isArray(ids) || !ids.length) return
+  const set = {}
+  ids.forEach((id) => { if (id) set[id] = true })
+  const q = getQueue()
+  const kept = q.filter((item) => !item.clientId || !set[item.clientId])
+  if (kept.length !== q.length) {
+    try {
+      if (kept.length) wx.setStorageSync(KEY, kept)
+      else wx.removeStorageSync(KEY)
+    } catch (e) { /* noop */ }
+  }
+}
+
 // 并发锁：网络事件与切前台可能同时触发补传，
 // 不加锁会同时读到同一份队列、各自全部补传，造成成倍重复
 let _flushing = false
@@ -111,4 +127,4 @@ async function flushPendingQueue() {
   }
 }
 
-module.exports = { getQueue, enqueue, enqueueVoice, clear, flushPendingQueue }
+module.exports = { getQueue, enqueue, enqueueVoice, clear, dropByClientIds, flushPendingQueue }
