@@ -13,14 +13,15 @@ function getQueue() {
   }
 }
 
-// 入队：记录录入时刻与当天日期键（及保留的原声文件 ID），补传时随请求带上，
-// 保证离线记录归入「发生那天」而不是「补传那天」
-function enqueue(raw, dayKey, audioFileIDs) {
+// 入队：记录录入时刻与当天日期键（及幂等键、原声文件 ID），补传时随请求带上，
+// 保证离线记录归入「发生那天」而不是「补传那天」；clientId 让服务端强幂等去重
+function enqueue(raw, dayKey, audioFileIDs, clientId) {
   const q = getQueue()
   q.push({
     raw,
     dayKey: dayKey || '',
     audioFileIDs: Array.isArray(audioFileIDs) ? audioFileIDs : [],
+    clientId: clientId || '',
     localCreatedAt: Date.now()
   })
   try {
@@ -40,6 +41,7 @@ function enqueueVoice(v) {
     duration: v.duration || 0,
     audioFileIDs: Array.isArray(v.audioFileIDs) ? v.audioFileIDs : [],
     dayKey: v.dayKey || '',
+    clientId: v.clientId || '',
     localCreatedAt: Date.now()
   })
   try {
@@ -53,46 +55,60 @@ function clear() {
   } catch (e) { /* noop */ }
 }
 
+// 并发锁：网络事件与切前台可能同时触发补传，
+// 不加锁会同时读到同一份队列、各自全部补传，造成成倍重复
+let _flushing = false
+
 // 补传离线队列；成功返回补传条数
 async function flushPendingQueue() {
-  const q = getQueue()
-  if (!q.length) return 0
-  const remaining = []
-  let done = 0
-  for (const item of q) {
-    // 旧队列条目没有 dayKey：用录入时刻推算
-    const dayKey = item.dayKey || fmt.dayKey(new Date(item.localCreatedAt || Date.now()))
-    try {
-      const data = item.kind === 'voice'
-        ? {
-            kind: 'voice',
-            title: item.title || '',
-            amps: Array.isArray(item.amps) ? item.amps : [],
-            duration: item.duration || 0,
-            audioFileIDs: Array.isArray(item.audioFileIDs) ? item.audioFileIDs : [],
-            dayKey
-          }
-        : {
-            raw: item.raw,
-            dayKey,
-            audioFileIDs: Array.isArray(item.audioFileIDs) ? item.audioFileIDs : []
-          }
-      await wx.cloud.callFunction({
-        name: config.CLOUD_FUNCTIONS.SAVE_ENTRY,
-        data
-      })
-      done++
-    } catch (e) {
-      remaining.push(item)
+  if (_flushing) return 0
+  _flushing = true
+  try {
+    const q = getQueue()
+    if (!q.length) return 0
+    const remaining = []
+    let done = 0
+    for (const item of q) {
+      // 旧队列条目没有 dayKey：用录入时刻推算
+      const dayKey = item.dayKey || fmt.dayKey(new Date(item.localCreatedAt || Date.now()))
+      try {
+        const common = {
+          dayKey,
+          clientId: item.clientId || '',
+          // 原始录入时间：补传的记录落回它真正的时间线位置
+          clientCreatedAt: item.localCreatedAt || Date.now()
+        }
+        const data = item.kind === 'voice'
+          ? Object.assign({
+              kind: 'voice',
+              title: item.title || '',
+              amps: Array.isArray(item.amps) ? item.amps : [],
+              duration: item.duration || 0,
+              audioFileIDs: Array.isArray(item.audioFileIDs) ? item.audioFileIDs : []
+            }, common)
+          : Object.assign({
+              raw: item.raw,
+              audioFileIDs: Array.isArray(item.audioFileIDs) ? item.audioFileIDs : []
+            }, common)
+        await wx.cloud.callFunction({
+          name: config.CLOUD_FUNCTIONS.SAVE_ENTRY,
+          data
+        })
+        done++
+      } catch (e) {
+        remaining.push(item)
+      }
     }
+    if (remaining.length) {
+      try { wx.setStorageSync(KEY, remaining) } catch (e) { /* noop */ }
+    } else {
+      clear()
+    }
+    if (done > 0) stats.invalidate() // 补传成功后统计/连续天数已变化
+    return done
+  } finally {
+    _flushing = false
   }
-  if (remaining.length) {
-    try { wx.setStorageSync(KEY, remaining) } catch (e) { /* noop */ }
-  } else {
-    clear()
-  }
-  if (done > 0) stats.invalidate() // 补传成功后统计/连续天数已变化
-  return done
 }
 
 module.exports = { getQueue, enqueue, enqueueVoice, clear, flushPendingQueue }

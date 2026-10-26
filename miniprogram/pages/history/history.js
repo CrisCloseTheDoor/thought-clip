@@ -94,7 +94,9 @@ Page({
             createdAt: e.createdAt,
             raw: e.raw,
             timeText: fmt.hm(t),
-            dayKey: fmt.dayKey(t),
+            // 分组用存储的 dayKey：离线补传的记录 createdAt 是补传时刻，
+            // 用它换算日期会把旧记录漂浮到「今天」
+            dayKey: e.dayKey || fmt.dayKey(t),
             typeLabel: meta.label,
             typeColor: meta.color
           }
@@ -111,7 +113,12 @@ Page({
 
   _merge(list) {
     const groups = this.data.groups.slice()
+    // 去重：分页期间有新记录插入会导致相邻页边界重叠，跳过已展示的记录
+    const seen = new Set()
+    groups.forEach((g) => g.items.forEach((it) => seen.add(it._id)))
     list.forEach((item) => {
+      if (seen.has(item._id)) return
+      seen.add(item._id)
       const last = groups[groups.length - 1]
       if (last && last.dayKey === item.dayKey) {
         last.items.push(item)

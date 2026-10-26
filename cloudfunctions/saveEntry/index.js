@@ -40,10 +40,10 @@ const SYSTEM_PROMPT = `你是用户的个人记录整理助手。将口语化、
 // AI 反馈（按需，用户主动触发）：四类，一律限 150 字内
 const FEEDBACK_SYSTEM = '你是用户的私人思考伙伴。回复用简体中文，语气自然克制，严禁说教。严格遵守字数限制。'
 const FEEDBACK_META = {
-  digest: '把这段个人记录提炼成 3-5 条要点，每条一行、简洁独立。不新增信息、不评判。总字数不超过150字。直接输出要点列表，不要任何前后缀。',
-  challenge: '你是用户的思考陪练。针对这段记录，指出 1-2 个最值得质疑的假设或盲点，并给出简短的反方视角或追问。语气坦诚友善，不居高临下。总字数不超过150字。直接输出内容。',
-  action: '从这段记录中提炼最多 3 条可执行的小步骤，每条以动词开头、单步可完成。若确实没有可行动的内容，请诚实说明。总字数不超过150字。直接输出列表。',
-  companion: '你是温柔的倾听者。用户刚写下一段心事或碎碎念。先接住情绪（不评判、不建议、不诊断），再以一句关心的开放式问题结尾。总字数不超过150字。直接输出内容。'
+  digest: '把这段个人记录提炼成 3-5 条要点，每条一行、简洁独立。不新增信息、不评判。总字数不超过250字（不必凑满）。直接输出要点列表，不要任何前后缀。',
+  challenge: '你是用户的思考陪练。针对这段记录，指出 1-2 个最值得质疑的假设或盲点，并给出简短的反方视角或追问。语气坦诚友善，不居高临下。总字数不超过250字（不必凑满）。直接输出内容。',
+  action: '从这段记录中提炼最多 3 条可执行的小步骤，每条以动词开头、单步可完成。若确实没有可行动的内容，请诚实说明。总字数不超过250字（不必凑满）。直接输出列表。',
+  companion: '你是温柔的倾听者。用户刚写下一段心事或碎碎念。先接住情绪（不评判、不建议、不诊断），再以一句关心的开放式问题结尾。总字数不超过250字（不必凑满）。直接输出内容。'
 }
 
 // 历史上下文：单次反馈最多携带的记录条数（起步期 30，扩量改此处）
@@ -122,18 +122,15 @@ function postJson(url, headers, body) {
   })
 }
 
-// opts.plain = true 时输出纯文本（AI 反馈用），否则 JSON（整理用）
-async function callDeepSeek(apiKey, text, maxTokens, systemPrompt, opts) {
+// 底层：直接以消息数组调用（多轮对话用）；plain=false 时要求 JSON 输出
+async function callDeepSeekMsgs(apiKey, messages, maxTokens, temperature, plain) {
   const body = {
     model: MODEL,
-    messages: [
-      { role: 'system', content: systemPrompt || SYSTEM_PROMPT },
-      { role: 'user', content: text }
-    ],
+    messages,
     max_tokens: maxTokens || 500,
-    temperature: (opts && opts.temperature) || 0.3
+    temperature: temperature || 0.3
   }
-  if (!(opts && opts.plain)) body.response_format = { type: 'json_object' }
+  if (!plain) body.response_format = { type: 'json_object' }
   const res = await postJson(DEEPSEEK_URL, { Authorization: 'Bearer ' + apiKey }, body)
   if (res.status !== 200) {
     const err = new Error('DeepSeek HTTP ' + res.status + ': ' + JSON.stringify(res.body).slice(0, 200))
@@ -143,6 +140,15 @@ async function callDeepSeek(apiKey, text, maxTokens, systemPrompt, opts) {
   const c = res.body && res.body.choices && res.body.choices[0] &&
     res.body.choices[0].message && res.body.choices[0].message.content
   return c || ''
+}
+
+// opts.plain = true 时输出纯文本（AI 反馈用），否则 JSON（整理用）
+async function callDeepSeek(apiKey, text, maxTokens, systemPrompt, opts) {
+  const messages = [
+    { role: 'system', content: systemPrompt || SYSTEM_PROMPT },
+    { role: 'user', content: text }
+  ]
+  return callDeepSeekMsgs(apiKey, messages, maxTokens, (opts && opts.temperature) || 0.3, opts && !!opts.plain)
 }
 
 // 解析并校验 AI 返回的 JSON
@@ -208,6 +214,40 @@ async function resolveKey(openid, override) {
   return null
 }
 
+// 客户端时间：补传的记录用它落回真实的记录时刻（而非补传时刻）
+function clientNow(event) {
+  const cts = Number(event.clientCreatedAt)
+  return (cts > 0 && cts <= Date.now() + 60000) ? new Date(cts) : new Date()
+}
+
+// 幂等返回体：把已存文档包装成与正常保存一致的形状
+function dupReturn(doc) {
+  return {
+    entry: {
+      _id: doc._id,
+      kind: doc.kind || '',
+      raw: doc.raw || '',
+      text: doc.text || '',
+      type: doc.type,
+      keywords: doc.keywords || [],
+      refined: doc.refined,
+      dayKey: doc.dayKey,
+      createdAt: new Date(doc.createdAt).toISOString()
+    }
+  }
+}
+
+// 强幂等：带 clientId 的提交（客户端直存重试 / 离线补传）不限时间窗，永不重复落库
+async function findByClientId(openid, clientId) {
+  if (!clientId || typeof clientId !== 'string') return null
+  const cid = clientId.slice(0, 40)
+  const res = await db.collection('entries')
+    .where({ _openid: openid, clientId: cid })
+    .limit(1)
+    .get()
+  return (res.data && res.data[0]) || null
+}
+
 exports.main = async (event) => {
   const { OPENID } = cloud.getWXContext()
   const raw = typeof event.raw === 'string' ? event.raw.trim() : ''
@@ -218,6 +258,8 @@ exports.main = async (event) => {
 
   // 声音灵感：单段音频 + 标题 + 量化幅度，不经 AI，音频永久保留
   if (event.kind === 'voice') {
+    const dupDoc = await findByClientId(OPENID, event.clientId)
+    if (dupDoc) return dupReturn(dupDoc)
     const title = (typeof event.title === 'string' && event.title.trim())
       ? event.title.trim().slice(0, 30) : ''
     const amps = Array.isArray(event.amps)
@@ -230,7 +272,7 @@ exports.main = async (event) => {
       ? event.audioFileIDs.filter((s) => typeof s === 'string' && s.indexOf('cloud://') === 0).slice(0, 20)
       : []
 
-    const now = new Date()
+    const now = clientNow(event)
     const dayKeyNow = resolveDayKey(event.dayKey, now.getTime())
     const doc = {
       _openid: OPENID,
@@ -247,16 +289,19 @@ exports.main = async (event) => {
       createdAt: now
     }
     if (audioFileIDs.length) doc.audioFileIDs = audioFileIDs
+    if (event.clientId) doc.clientId = String(event.clientId).slice(0, 40)
     const addRes = await db.collection('entries').add({ data: doc })
     doc._id = addRes._id
     doc.createdAt = now.toISOString()
     return { entry: doc }
   }
 
-  // AI 反馈：对已有记录按需生成，结果追加保存在记录下（留最近 5 条）
+  // AI 反馈：对已有记录按需生成，结果追加保存在记录下（留最近 20 轮）
   if (event.feedback) {
+    // 追问（followUp）不带类别：它延续已有对话，类别在历史轮里；
+    // 仅首轮反馈必须携带合法 kind
     const kind = FEEDBACK_META[event.kind] ? event.kind : null
-    if (!kind) return { error: 'bad-kind' }
+    if (!kind && !event.followUp) return { error: 'bad-kind' }
     const apiKey = await resolveKey(OPENID, null)
     if (!apiKey) return { error: 'no-key' }
 
@@ -270,6 +315,74 @@ exports.main = async (event) => {
     if (!entry || entry._openid !== OPENID) return { error: 'not-found' }
     const content = (entry.text || entry.raw || '').trim()
     if (!content) return { error: 'empty' }
+
+    // 多轮追问：用户裸文本延续"threadKind 类别"的唯一对话串。
+    // 用户轮归属其前一条 AI 轮的类别（与客户端展示同一规则）；
+    // 历史记录上下文沿用本串首次检索的编号行，保证 [n] 编号跨轮一致
+    if (event.followUp) {
+      const text = (typeof event.text === 'string' ? event.text.trim() : '').slice(0, 500)
+      if (!text) return { error: 'empty' }
+      const all = Array.isArray(entry.feedbacks) ? entry.feedbacks : []
+
+      let gKind = FEEDBACK_META[event.threadKind] ? event.threadKind : ''
+      if (!gKind) {
+        const lastAi = all.slice().reverse().find((t) => t.kind && t.kind !== 'user')
+        gKind = (lastAi && lastAi.kind) || 'digest'
+      }
+      const turns = []
+      let cur = null
+      all.forEach((t) => {
+        if (!t) return
+        if (t.kind !== 'user') cur = t.kind
+        if (t.kind === 'user' ? (cur === gKind) : (t.kind === gKind)) turns.push(t)
+      })
+
+      const msgs = [{ role: 'system', content: FEEDBACK_SYSTEM }]
+      let lastRole = 'system'
+      turns.forEach((t) => {
+        if (!t || !t.text) return
+        const role = t.kind === 'user' ? 'user' : 'assistant'
+        if (role === lastRole) {
+          msgs[msgs.length - 1].content += '\n' + t.text
+        } else {
+          msgs.push({ role, content: t.text })
+          lastRole = role
+        }
+      })
+
+      let final = text + '\n\n（回复不超过250字，不必凑满）'
+      const lastAi = turns.slice().reverse().find((t) => t.kind !== 'user' && Array.isArray(t.lines) && t.lines.length)
+      if (event.useCtx && lastAi) {
+        final = '【个人历史记录】\n' + lastAi.lines.join('\n') + '\n\n' + CTX_RULE + '\n\n【用户追问】\n' + final
+      }
+      if (msgs[msgs.length - 1].role === 'user') {
+        msgs[msgs.length - 1].content += '\n\n' + final
+      } else {
+        msgs.push({ role: 'user', content: final })
+      }
+
+      let reply = ''
+      try {
+        reply = (await callDeepSeekMsgs(apiKey, msgs, 400, 0.5, true)).trim()
+      } catch (e) {
+        console.error('追问生成失败', e.message)
+        return { error: 'ai-fail' }
+      }
+      if (!reply) return { error: 'ai-empty' }
+
+      const now = new Date()
+      const aiTurn = { kind: gKind, text: reply.slice(0, 400), createdAt: now }
+      if (event.useCtx && lastAi && Array.isArray(lastAi.sources) && lastAi.sources.length) {
+        aiTurn.sources = lastAi.sources
+      }
+      const list = all.concat([{ kind: 'user', text, createdAt: now }, aiTurn]).slice(-20)
+      try {
+        await db.collection('entries').doc(event.entryId).update({ data: { feedbacks: list } })
+      } catch (e) {
+        return { error: 'save-fail' }
+      }
+      return { ok: true, feedbacks: list }
+    }
 
     // 历史上下文检索（用户已开启并授权时）
     let ctxLines = []
@@ -303,9 +416,11 @@ exports.main = async (event) => {
     }
     if (!text) return { error: 'ai-empty' }
 
-    const fb = { kind, text: text.slice(0, 400), createdAt: new Date() }
+    const fb = { kind, text: text.slice(0, 400), createdAt: new Date(), head: true }
     if (sources.length) fb.sources = sources
-    const list = (Array.isArray(entry.feedbacks) ? entry.feedbacks : []).concat(fb).slice(-5)
+    // 编号行全文存档：后续追问直接复用，保证 [n] 引用跨轮一致
+    if (ctxLines.length) fb.lines = ctxLines
+    const list = (Array.isArray(entry.feedbacks) ? entry.feedbacks : []).concat(fb).slice(-20)
     try {
       await db.collection('entries').doc(event.entryId).update({ data: { feedbacks: list } })
     } catch (e) {
@@ -327,6 +442,42 @@ exports.main = async (event) => {
   }
 
   if (!raw) return { error: 'raw is required' }
+
+  // 强幂等（第一优先）：带 clientId 的提交不限时间窗——弱网超时重试、
+  // 数小时后网络恢复才补传的离线记录，均直接返回首次落库的那条，不再重复
+  try {
+    const dupDoc = await findByClientId(OPENID, event.clientId)
+    if (dupDoc) {
+      console.log('幂等拦截(clientId)：', event.clientId, '→', dupDoc._id)
+      return dupReturn(dupDoc)
+    }
+  } catch (e) {
+    console.warn('clientId 幂等检查失败，继续走同文护栏', e.message)
+  }
+
+  // 幂等护栏（第二优先，拦不带 clientId 的直存重试）：
+  // 同一天内相同原文、60 秒内的重复提交不重复落库；用户有意连记两遍同句话不受影响
+  try {
+    const _c = db.command
+    const dayKeyNow = resolveDayKey(event.dayKey, Date.now())
+    const dupRes = await db.collection('entries')
+      .where({
+        _openid: OPENID,
+        raw: raw,
+        dayKey: dayKeyNow,
+        deletedAt: _c.exists(false)
+      })
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .get()
+    const prev = dupRes.data && dupRes.data[0]
+    if (prev && Date.now() - new Date(prev.createdAt).getTime() < 60 * 1000) {
+      console.log('幂等拦截(同文60s)：', prev._id)
+      return dupReturn(prev)
+    }
+  } catch (e) {
+    console.warn('幂等检查失败，按正常保存继续', e.message)
+  }
 
   // 仅整理：贴纸里的单段语音清理，不落库
   if (isRefineOnly) {
@@ -366,7 +517,7 @@ exports.main = async (event) => {
     : []
 
   // 落库
-  const now = new Date()
+  const now = clientNow(event)
   const doc = {
     _openid: OPENID,
     raw,
@@ -379,6 +530,7 @@ exports.main = async (event) => {
   }
   if (result.events && result.events.length) doc.events = result.events
   if (audioFileIDs.length) doc.audioFileIDs = audioFileIDs
+  if (event.clientId) doc.clientId = String(event.clientId).slice(0, 40)
   const addRes = await db.collection('entries').add({ data: doc })
   doc._id = addRes._id
   doc.createdAt = now.toISOString()

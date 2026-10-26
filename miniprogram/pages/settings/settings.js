@@ -13,8 +13,6 @@ Page({
     devConsent: false,
     // 保留原声：成功识别的录音随记录长期保留，详情页可回听
     keepVoice: false,
-    // 反馈时检索历史上下文（全局，开启需同意）
-    ctxEnabled: false,
     // 语音识别服务状态（null=未知，true=已配置，false=未配置）
     asrReady: null,
     // 回收站（软删除 3 天内可还原）
@@ -57,8 +55,7 @@ Page({
             apiKey: doc.apiKey || '',
             apiKeyMask: this._maskKey(doc.apiKey || ''),
             devConsent: !!doc.devConsent,
-            keepVoice: !!doc.keepVoice,
-            ctxEnabled: !!doc.ctxEnabled
+            keepVoice: !!doc.keepVoice
           })
         }
         // 未配置时默认「原文记录」模式
@@ -255,33 +252,6 @@ Page({
             this.loadBin()
           })
           .catch(() => wx.showToast({ title: '删除失败', icon: 'none' }))
-      }
-    })
-  },
-
-  /* ---------- 反馈时检索历史上下文（与详情页开关同一存储） ---------- */
-
-  toggleCtx() {
-    if (this.data.apiMode === 'none') {
-      wx.showToast({ title: '需先选择 AI 引擎', icon: 'none' })
-      return
-    }
-    const v = !this.data.ctxEnabled
-    if (!v) {
-      this.setData({ ctxEnabled: false })
-      this.save({ ctxEnabled: false })
-      return
-    }
-    wx.showModal({
-      title: '检索历史上下文',
-      content: '开启后，每次反馈会自动检索你的相关历史记录，便于AI引擎生成更了解你的回答。可随时关闭。',
-      confirmText: '开启',
-      cancelText: '暂不',
-      confirmColor: '#E8B44B',
-      success: (r) => {
-        if (!r.confirm) return
-        this.setData({ ctxEnabled: true })
-        this.save({ ctxEnabled: true })
       }
     })
   },

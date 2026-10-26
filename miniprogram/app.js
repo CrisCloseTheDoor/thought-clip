@@ -10,9 +10,11 @@ App({
   onLaunch() {
     // 音频会话独占：不与其他音频混音，录音与回听的会话切换行为更确定
     // （修复真机上"录音一次后，所有回听都断断续续"的会话残留问题）
+    // obeyMuteSwitch: false —— 回放走媒体通道，iOS 静音开关拨到静音时仍可回听
+    //（用户主动点播放即明确的收听意图；小红书/QQ音乐等媒体应用同此行为）
     if (wx.setInnerAudioOption) {
       try {
-        wx.setInnerAudioOption({ mixWithOther: false })
+        wx.setInnerAudioOption({ mixWithOther: false, obeyMuteSwitch: false })
       } catch (e) { /* 低版本忽略 */ }
     }
     if (!wx.cloud) {

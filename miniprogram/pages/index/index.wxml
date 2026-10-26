@@ -58,8 +58,8 @@
     <view class="transcript" wx:if="{{stage === 'recording' && !sticker}}">
       <view class="live-head">
         <view class="live-dot"></view>
-        <text wx:if="{{recordSeconds < 52}}">正在录音 {{recordSeconds}}s · 松手结束</text>
-        <text wx:else class="warn-text">{{60 - recordSeconds}}s 后自动结束，注意收尾</text>
+        <text wx:if="{{recordSeconds < warnAt}}">正在录音 {{recordSeconds}}s · 松手结束</text>
+        <text wx:else class="warn-text">{{maxSeconds - recordSeconds}}s 后自动结束，注意收尾</text>
       </view>
       <view class="wave">
         <view class="wave-bar" wx:for="{{bars}}" wx:key="k" style="height: {{item.v}}%"></view>
@@ -107,8 +107,8 @@
       <view class="rec-strip" wx:if="{{stage === 'recording'}}">
         <view class="rec-head">
           <view class="live-dot"></view>
-          <text wx:if="{{recordSeconds < 52}}">正在录音 {{recordSeconds}}s · 松手结束</text>
-          <text wx:else class="warn-text">{{60 - recordSeconds}}s 后自动结束，注意收尾</text>
+          <text wx:if="{{recordSeconds < warnAt}}">正在录音 {{recordSeconds}}s · 松手结束</text>
+          <text wx:else class="warn-text">{{maxSeconds - recordSeconds}}s 后自动结束，注意收尾</text>
         </view>
         <view class="wave small">
           <view class="wave-bar" wx:for="{{bars}}" wx:key="k" style="height: {{item.v}}%"></view>

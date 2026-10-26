@@ -5,11 +5,11 @@ const stats = require('../../utils/stats')
 const audioUtil = require('../../utils/audio')
 const { typeMeta } = require('../../utils/types')
 
-const MAX_RECORD_SECONDS = 60
-const WARN_AT = 52            // 距上限 8 秒时预警，提醒收尾
-const SHORT_RECORD_MS = 1000  // 短于 1s 视为误触，直接剪枝不识别
-const ZONE_SLIDE_PX = 70      // 录音中上滑/下滑进入区域的手指位移阈值（屏幕像素）
-const WAVE_BARS = 28          // 波形条数
+const MAX_RECORD_SECONDS = 30  // 一句话识别约限 1MB 音频数据，16kHz wav 32KB/s → 30 秒 ≈ 0.96MB 贴边安全
+const WARN_AT = 22             // 距上限 8 秒时预警，提醒收尾
+const SHORT_RECORD_MS = 1000   // 短于 1s 视为误触，直接剪枝不识别
+const ZONE_SLIDE_PX = 70       // 录音中上滑/下滑进入区域的手指位移阈值（屏幕像素）
+const WAVE_BARS = 28           // 波形条数
 const DRAFT_KEY = 'draftSticker'
 const CLIP_KEEP_DAYS = 7
 
@@ -33,6 +33,8 @@ Page({
     // 流程状态：idle(空态/贴纸) | recording(录音中) | transcribing(识别中)
     stage: 'idle',
     recordSeconds: 0,
+    maxSeconds: MAX_RECORD_SECONDS, // wxml 倒计时绑定用
+    warnAt: WARN_AT,
     bars: [],                 // 实时波形 [{k, v}]，v 为 0-100 高度
     recZone: '',              // 录音中手指所在区域：'' | inspire(上滑) | discard(下滑)
     saving: false,            // 贴纸保存中
@@ -327,6 +329,7 @@ Page({
   /* ---------- 上传 → 识别 → 追加进贴纸 ---------- */
 
   _onRecorded(tempFilePath, durationMs) {
+    this._asrRetried = false // 新录音的重试计数清零
     // 声音灵感素材：停录即解析本地 wav 量化幅度（48 档）与时长
     this._lastDuration = durationMs ? Math.round(durationMs / 1000) : 0
     audioUtil.computeAmps(tempFilePath, 48, (amps) => { this._lastAmps = amps })
@@ -362,14 +365,33 @@ Page({
       this._resetStage()
       if (result.error === 'no-speech') {
         this._onNoSpeech(fileID)
+      } else if (this._isTimeoutErr(result.error) && !this._asrRetried) {
+        this._autoRetryAsr(fileID)
       } else {
         this._onChainError(result.error || '未知错误', fileID)
       }
     }).catch((err) => {
       console.warn('语音识别链路失败，fileID=', fileID, err)
       this._resetStage()
-      this._onChainError(err, fileID)
+      const msg = String((err && (err.errMsg || err.message)) || err || '')
+      if (this._isTimeoutErr(msg) && !this._asrRetried) {
+        this._autoRetryAsr(fileID)
+      } else {
+        this._onChainError(err, fileID)
+      }
     })
+  },
+
+  _isTimeoutErr(s) {
+    return /-504003|timeout|超时/i.test(String(s || ''))
+  },
+
+  // 识别超时自动重试一次：偶发超时多为函数冷启动，重试时已预热，多数能成
+  _autoRetryAsr(fileID) {
+    this._asrRetried = true
+    this._vibrate('light')
+    wx.showToast({ title: '识别超时，自动重试中…', icon: 'none', duration: 2000 })
+    setTimeout(() => this._transcribe(fileID), 800)
   },
 
   // 没识别到内容：音频已保留，让用户选择去向；哼旋律常走这条路。
@@ -421,6 +443,9 @@ Page({
   _onChainError(err, fileID) {
     let code = (err && (err.errMsg || err.message)) || (typeof err === 'string' ? err : '') || '未知'
     code = String(code).split('\n')[0].slice(0, 60)
+    // 常见错误码翻译成人话
+    if (code.indexOf('-504003') > -1) code = '云函数执行超时(-504003)'
+    else if (/timeout|超时/i.test(code)) code = '请求超时'
     wx.showModal({
       title: '语音没识别成功',
       content: '这段录音没能转成文字' + (code && code !== '未知' ? '（' + code + '）' : '') + '。' +
@@ -645,11 +670,14 @@ Page({
       audioFileIDs = []
     }
     const dayKey = fmt.dayKey(new Date())
+    // 幂等键：弱网超时重试/离线补传几小时后再发，服务端凭它认出同一条，不重复落库
+    const clientId = 'e' + Date.now() + Math.random().toString(36).slice(2, 8)
+    const clientCreatedAt = Date.now()
     this.setData({ saving: true })
 
     wx.cloud.callFunction({
       name: config.CLOUD_FUNCTIONS.SAVE_ENTRY,
-      data: { raw: combined, dayKey, audioFileIDs }
+      data: { raw: combined, dayKey, audioFileIDs, clientId, clientCreatedAt }
     }).then((res) => {
       this.setData({ saving: false })
       const prevCount = this.data.todayCount
@@ -658,7 +686,7 @@ Page({
     }).catch((err) => {
       this.setData({ saving: false })
       console.warn('saveEntry 调用失败，已入离线队列', err)
-      pending.enqueue(combined, dayKey, audioFileIDs)
+      pending.enqueue(combined, dayKey, audioFileIDs, clientId)
       wx.showToast({ title: '已暂存本机，联网后自动同步', icon: 'none', duration: 2500 })
       this._clearSticker()
     })
@@ -709,6 +737,8 @@ Page({
   _saveInspiration(opt) {
     if (this.data.saving) return
     const dayKey = fmt.dayKey(new Date())
+    const clientId = 'v' + Date.now() + Math.random().toString(36).slice(2, 8)
+    const clientCreatedAt = Date.now()
     this.setData({ saving: true })
     wx.cloud.callFunction({
       name: config.CLOUD_FUNCTIONS.SAVE_ENTRY,
@@ -718,7 +748,9 @@ Page({
         amps: opt.amps,
         duration: opt.duration,
         audioFileIDs: [opt.fileID],
-        dayKey
+        dayKey,
+        clientId,
+        clientCreatedAt
       }
     }).then(() => {
       this.setData({ saving: false })
@@ -730,7 +762,7 @@ Page({
       console.warn('声音灵感保存失败，已入离线队列', err)
       pending.enqueueVoice({
         title: opt.title, amps: opt.amps, duration: opt.duration,
-        audioFileIDs: [opt.fileID], dayKey
+        audioFileIDs: [opt.fileID], dayKey, clientId
       })
       wx.showToast({ title: '已暂存本机，联网后自动同步', icon: 'none', duration: 2500 })
       this._clearSticker()
@@ -992,19 +1024,23 @@ Page({
       .limit(20)
       .get()
       .then((res) => {
-        const entries = (res.data || []).map((e) => ({
-          _id: e._id,
-          kind: e.kind || '',
-          title: e.title || '',
-          amps: e.amps || [],
-          duration: e.duration || 0,
-          audioFileIDs: e.audioFileIDs || [],
-          text: e.text || e.raw,
-          type: e.type,
-          keywords: e.keywords || [],
-          createdAt: e.createdAt,
-          raw: e.raw
-        }))
+        const entries = (res.data || []).map((e) => {
+          const t = fmt.toDate(e.createdAt)
+          return {
+            _id: e._id,
+            kind: e.kind || '',
+            title: e.title || '',
+            amps: e.amps || [],
+            duration: e.duration || 0,
+            audioFileIDs: e.audioFileIDs || [],
+            text: e.text || e.raw,
+            type: e.type,
+            keywords: e.keywords || [],
+            createdAt: e.createdAt,
+            raw: e.raw,
+            timeText: fmt.hm(t) // 页面侧算好传给组件，规避 iOS Date 传递失真
+          }
+        })
         this.setData({
           todayTitle: fmt.friendlyDate(now) + ' · ' + fmt.weekday(now),
           todayCount: entries.length,

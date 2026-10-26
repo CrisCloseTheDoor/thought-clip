@@ -87,6 +87,8 @@ function _start(fileID, path, handlers, retried) {
   }
   _destroyCtx()
   _ctx = wx.createInnerAudioContext()
+  // iOS 静音开关不影响回放（用户点播放即收听意图）；需在 src 赋值前设置
+  try { _ctx.obeyMuteSwitch = false } catch (e) { /* 非 iOS 无此属性 */ }
   // 部分机型上"新建上下文后立即 play()"存在起播竞态，autoplay 由系统择机起播更稳
   _ctx.autoplay = true
   _cur = { fileID, handlers, retried: !!retried }

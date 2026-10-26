@@ -25,7 +25,10 @@ Component({
       this.setData({
         typeLabel: meta.label,
         typeColor: meta.color,
-        timeText: hm(toDate(v.createdAt)),
+        // 时间优先用页面侧算好的文本：Date 对象跨组件属性传递在 iOS（JavaScriptCore）
+        // 上会被序列化成不可解析形态，此处重算会落到 toDate 的"当前时间"兜底，
+        // 表现为历史记录全部显示实时时间（安卓 V8 无此问题）
+        timeText: v.timeText || hm(toDate(v.createdAt)),
         // d = 播放动效的波纹延迟（8 根一循环，均衡器式起伏）
         ampsView: (v.amps || []).map((n, i) => ({
           v: Math.max(8, Math.min(100, n || 0)),
