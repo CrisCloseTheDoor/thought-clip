@@ -19,6 +19,65 @@
   width: 8rpx;
 }
 
+/* ---- 思维模式周复盘变体：温暖舒适风格 ---- */
+.type-bar.weekly {
+  background: #D4866E;
+}
+.weekly-card {
+  background: linear-gradient(135deg, rgba(212, 134, 110, 0.12), rgba(212, 134, 110, 0.03)), var(--card);
+  border: 1rpx solid rgba(212, 134, 110, 0.25);
+}
+.w-head {
+  display: flex;
+  align-items: center;
+}
+.w-badge {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #E8A088;
+  background: rgba(212, 134, 110, 0.14);
+  border-radius: 999rpx;
+  padding: 6rpx 20rpx;
+}
+.w-text {
+  font-size: 28rpx;
+  line-height: 1.7;
+  margin-top: 16rpx;
+  word-break: break-word;
+  white-space: pre-line;
+  color: var(--text-dim);
+}
+
+/* ---- 密码贴纸变体：温暖色调 ---- */
+.type-bar.pwd {
+  background: #9B8EC4;
+}
+.hidden-card {
+  background: linear-gradient(135deg, rgba(155, 142, 196, 0.08), rgba(155, 142, 196, 0.03)), var(--card);
+  border: 1rpx solid rgba(155, 142, 196, 0.2);
+}
+.pwd-row {
+  display: flex;
+  align-items: center;
+}
+.pwd-icon {
+  margin-right: 10rpx;
+  font-size: 26rpx;
+}
+.pwd-label {
+  font-size: 22rpx;
+  font-weight: 600;
+  color: #9B8EC4;
+}
+.pwd-title {
+  font-size: 26rpx;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 8rpx;
+}
+
 /* ---- 声音灵感变体 ---- */
 .type-bar.music {
   background: var(--teal);
@@ -119,6 +178,7 @@
   font-size: 30rpx;
   line-height: 1.65;
   word-break: break-word;
+  white-space: pre-line; /* 编辑时手打的换行符正常显示为分段 */
 }
 
 .raw {

@@ -5,10 +5,9 @@ const stats = require('../../utils/stats')
 const audioUtil = require('../../utils/audio')
 const { typeMeta } = require('../../utils/types')
 
-const MAX_RECORD_SECONDS = 30  // 一句话识别约限 1MB 音频数据，16kHz wav 32KB/s → 30 秒 ≈ 0.96MB 贴边安全
-const WARN_AT = 22             // 距上限 8 秒时预警，提醒收尾
+const MAX_RECORD_SECONDS = 60  // mp3 约 48kbps → 60 秒 ≈ 360KB，远低于一句话识别 1MB 限制
+const WARN_AT = 52             // 距上限 8 秒时预警，提醒收尾
 const SHORT_RECORD_MS = 1000   // 短于 1s 视为误触，直接剪枝不识别
-const ZONE_SLIDE_PX = 70       // 录音中上滑/下滑进入区域的手指位移阈值（屏幕像素）
 const WAVE_BARS = 28           // 波形条数
 const DRAFT_KEY = 'draftSticker'
 const CLIP_KEEP_DAYS = 7
@@ -36,7 +35,6 @@ Page({
     maxSeconds: MAX_RECORD_SECONDS, // wxml 倒计时绑定用
     warnAt: WARN_AT,
     bars: [],                 // 实时波形 [{k, v}]，v 为 0-100 高度
-    recZone: '',              // 录音中手指所在区域：'' | inspire(上滑) | discard(下滑)
     saving: false,            // 贴纸保存中
     // 贴纸（未确认草稿）：语音段/文字段持续追加，点「完成」才保存
     sticker: null,            // { rev, segments: [{id, source, text, pending}] }
@@ -74,6 +72,7 @@ Page({
     this._loadReview()
     this._loadStreak()
     this.loadClips()
+    this._maybeMonthlyReview()
   },
 
   onHide() {
@@ -89,15 +88,17 @@ Page({
     try { wx.vibrateShort({ type: type || 'light' }) } catch (e) { /* 低版本忽略 */ }
   },
 
-  /* ---------- 原生录音（RecorderManager，wav 16kHz 单声道） ---------- */
+  /* ---------- 原生录音（RecorderManager，mp3 16kHz 单声道） ---------- */
 
   _bindRecorder() {
     const r = getRecorder()
     r.onStart(() => {
       this._active = true
-      this._framesHeard = false
       this._pseudoLevel = 24
+      this._pseudoTarget = 30
+      this._framesHeard = false
       this.setData({ stage: 'recording', recordSeconds: 0, bars: [] })
+      // 录音计时
       this._timer = setInterval(() => {
         const s = this.data.recordSeconds + 1
         this.setData({ recordSeconds: s })
@@ -110,25 +111,29 @@ Page({
           this._timer = null
         }
       }, 1000)
+      // 伪波形（mp3 格式的兜底：平滑随机游走 + 偶发低谷模拟语音节奏）
+      // wav 格式时 onFrameRecorded 会送来真实 PCM，届时自动停用伪波形
+      this._barTimer = setInterval(() => {
+        if (this.data.stage !== 'recording' || this._framesHeard) return
+        if (Math.random() < 0.12) {
+          this._pseudoTarget = 5 + Math.random() * 15
+        } else {
+          this._pseudoTarget = 18 + Math.random() * 62
+        }
+        this._pseudoLevel += (this._pseudoTarget - this._pseudoLevel) * 0.35
+        this._pushBar(Math.round(Math.max(5, Math.min(100, this._pseudoLevel))))
+      }, 100)
       // 若在启动完成前就已松手（极快点击），延迟一小会儿再停，保证产出有效文件
       if (this._pendingStop) {
         this._pendingStop = false
         setTimeout(() => this._stopRecord(), 300)
       }
-      // 部分机型/开发者工具不回调 onFrameRecorded：700ms 后仍无帧则用平滑伪波形兜底
-      setTimeout(() => {
-        if (!this._framesHeard && this.data.stage === 'recording') {
-          this._barTimer = setInterval(() => {
-            this._pseudoLevel = Math.min(88, Math.max(10,
-              this._pseudoLevel + (Math.random() * 56 - 28)))
-            this._pushBar(Math.round(this._pseudoLevel))
-          }, 130)
-        }
-      }, 700)
     })
-    // 实时音量帧（wav 封装下 frameBuffer 为 16bit PCM 分片）
+    // 实时音量帧（仅 wav 格式：frameBuffer 为 16bit PCM 分片 → 精确 RMS）
+    // mp3 格式的帧是编码后数据（非 PCM），不处理，让伪波形继续驱动
     r.onFrameRecorded((res) => {
       if (this.data.stage !== 'recording' || !res || !res.frameBuffer) return
+      if (this._asrProvider !== 'iflytek') return // mp3 → 伪波形继续，不解读帧数据
       const i16 = new Int16Array(res.frameBuffer)
       if (!i16.length) return
       let sum = 0
@@ -137,26 +142,13 @@ Page({
         sum += v * v
       }
       const rms = Math.sqrt(sum / i16.length)
-      this._framesHeard = true
+      this._framesHeard = true // 收到真实 PCM 帧 → 伪波形自动停用
       this._pushBar(Math.min(100, Math.round(Math.sqrt(rms) * 260)))
     })
     r.onStop((res) => {
       this._stopUi()
       this._pendingStop = false
       if (res && res.tempFilePath) {
-        // 上滑/下滑区域松手：直接删除 / 直接存为声音灵感（不走识别链路）
-        if (this._pendingStopDiscard) {
-          this._pendingStopDiscard = false
-          this._resetStage()
-          this._vibrate('medium')
-          wx.showToast({ title: '已删除', icon: 'none' })
-          return
-        }
-        if (this._pendingStopInspire) {
-          this._pendingStopInspire = false
-          this._directSaveInspiration(res.tempFilePath, res.duration)
-          return
-        }
         // duration 缺失时用计时器秒数兜底，避免正常录音被误剪
         const durMs = res.duration || this.data.recordSeconds * 1000
         if (durMs >= SHORT_RECORD_MS) {
@@ -222,9 +214,11 @@ Page({
       audioUtil.stopPlayback()
       // 从贴纸内小麦克风录音时收起键盘，避免输入法挡住录音状态
       if (this.data.stickerFocus) this.setData({ stickerFocus: false })
+      // 录音格式联动 ASR 提供商：讯飞=wav（PCM 兼容）/ 腾讯=mp3（小文件快速上传）
+      const format = this._asrProvider === 'iflytek' ? 'wav' : 'mp3'
       r.start({
         duration: MAX_RECORD_SECONDS * 1000,
-        format: 'wav',
+        format,
         sampleRate: 16000,
         numberOfChannels: 1,
         frameSize: 4 // KB/帧，驱动实时波形
@@ -276,8 +270,10 @@ Page({
         this._aiEnabled = !!(doc && (doc.apiMode === 'own' || doc.apiMode === 'dev'))
         // 「保留原声」：成功识别的录音随记录长期保留（设置页开关，默认关）
         this._keepVoice = !!(doc && doc.keepVoice)
+        // ASR 提供商（讯飞=wav / 腾讯=mp3，联动录音格式）
+        this._asrProvider = (doc && doc.asrProvider) || 'tencent'
       })
-      .catch(() => { this._aiEnabled = false; this._keepVoice = false })
+      .catch(() => { this._aiEnabled = false; this._keepVoice = false; this._asrProvider = 'tencent' })
   },
 
   _promptEnableAi() {
@@ -329,15 +325,19 @@ Page({
   /* ---------- 上传 → 识别 → 追加进贴纸 ---------- */
 
   _onRecorded(tempFilePath, durationMs) {
-    this._asrRetried = false // 新录音的重试计数清零
+    this._asrRetried = false  // 新录音的重试计数清零
+    this._asrAbandoned = false // 新录音的重试放弃标记清零
     // 声音灵感素材：停录即解析本地 wav 量化幅度（48 档）与时长
     this._lastDuration = durationMs ? Math.round(durationMs / 1000) : 0
     audioUtil.computeAmps(tempFilePath, 48, (amps) => { this._lastAmps = amps })
     this.setData({ stage: 'transcribing' })
-    wx.cloud.uploadFile({
-      cloudPath: 'audio/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.wav',
-      filePath: tempFilePath
-    }).then((upRes) => {
+      const ext = this._asrProvider === 'iflytek' ? '.wav' : '.mp3'
+      wx.cloud.uploadFile({
+        cloudPath: 'audio/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + ext,
+        filePath: tempFilePath
+      }).then((upRes) => {
+      // 保存 fileID 供等待期按钮使用（跳过识别存灵感/删除）
+      this._currentFileId = upRes.fileID
       return this._transcribe(upRes.fileID)
     }).catch((err) => {
       // 上传失败（多为断网）：没有 fileID，无法重试识别，引导打字
@@ -355,6 +355,8 @@ Page({
       name: config.CLOUD_FUNCTIONS.ASR,
       data: { fileID, keepOnSuccess: !!(this._keepVoice || firstSeg) }
     }).then((res) => {
+      // 用户已在等待期跳过（存灵感/删除），忽略过期的识别结果
+      if (this._asrAbandoned) { this._asrAbandoned = false; return }
       const result = res.result || {}
       if (result.text) {
         this._resetStage()
@@ -392,6 +394,34 @@ Page({
     this._vibrate('light')
     wx.showToast({ title: '识别超时，自动重试中…', icon: 'none', duration: 2000 })
     setTimeout(() => this._transcribe(fileID), 800)
+  },
+
+  // 识别等待期：跳过识别，直接存为声音灵感（音频已上传，幅度已量化）
+  _skipToInspiration() {
+    const fileID = this._currentFileId
+    if (!fileID) { this._resetStage(); return }
+    this._asrAbandoned = true // 放弃当前识别回调
+    this._resetStage()
+    this._promptInspirationTitle(fileID, this._lastAmps, this._lastDuration)
+  },
+
+  // 识别等待期：弹出确认后再删除（确认期间识别进程继续，不受影响）
+  _skipToDelete() {
+    const fileID = this._currentFileId
+    if (!fileID) { this._resetStage(); return }
+    wx.showModal({
+      title: '删除这段录音？',
+      content: '识别将被取消，录音不可恢复。',
+      confirmText: '删除',
+      confirmColor: '#F0666E',
+      success: (r) => {
+        if (!r.confirm) return
+        this._asrAbandoned = true // 确认后才放弃识别回调
+        this._discardAudio(fileID)
+        this._resetStage()
+        wx.showToast({ title: '已删除', icon: 'none' })
+      }
+    })
   },
 
   // 没识别到内容：音频已保留，让用户选择去向；哼旋律常走这条路。
@@ -1030,6 +1060,8 @@ Page({
             _id: e._id,
             kind: e.kind || '',
             title: e.title || '',
+            hidden: e.hidden || false,
+            password: e.password || '',
             amps: e.amps || [],
             duration: e.duration || 0,
             audioFileIDs: e.audioFileIDs || [],
@@ -1131,50 +1163,48 @@ Page({
     }
   },
 
+  /* ---------- 思维模式月复盘（打开时检查，距上次复盘 ≥30 天且有记录则生成） ---------- */
+
+  _maybeMonthlyReview() {
+    if (!wx.cloud || !wx.cloud.callFunction) return
+    const LAST_KEY = 'lastMonthlyReview'
+    const last = wx.getStorageSync(LAST_KEY)
+    // 30 天内已生成过，跳过
+    if (last && Date.now() - last < 30 * 86400000) return
+    // AI 未开启不生成
+    if (!this._aiEnabled) return
+
+    // 立即写入 storage（乐观锁）：onShow 可能在云调用完成前多次触发，
+    // 不先锁就会并发生成多份月复盘
+    try { wx.setStorageSync(LAST_KEY, Date.now()) } catch (e) { return }
+
+    // 复盘起始：首次 = 30 天前；后续 = 上次复盘时刻
+    const periodStart = last || (Date.now() - 30 * 86400000)
+    const clientId = 'm' + Date.now() + Math.random().toString(36).slice(2, 8)
+    const dayKey = fmt.dayKey(new Date())
+    wx.cloud.callFunction({
+      name: config.CLOUD_FUNCTIONS.SAVE_ENTRY,
+      data: { kind: 'monthlyReview', clientId, dayKey, periodStart }
+    }).then((res) => {
+      const r = res.result || {}
+      if (r.entry || r.ok) {
+        stats.invalidate()
+        this.refreshToday()
+        console.log('月复盘已生成')
+      }
+      // no-entries 或 error 均静默——不打扰用户（LAST_KEY 已设置，30 天内不再尝试）
+    }).catch((err) => {
+      // 网络失败：回滚标记，下次打开重试
+      console.warn('月复盘生成失败', err)
+      try { wx.removeStorageSync(LAST_KEY) } catch (e) { /* noop */ }
+    })
+  },
+
   /* ---------- 事件转发 ---------- */
 
-  // 起点 Y 兼容两种来源：组件事件 detail.y / 原生 touch touches[0]
-  _touchYOf(e) {
-    return (e.touches && e.touches[0] && e.touches[0].clientY) ||
-      (e.detail && e.detail.y) || 0
-  },
-
-  onRecordStart(e) {
-    this._touchY = this._touchYOf(e)
-    this._zone = ''
-    this.setData({ recZone: '' })
-    this._startRecord()
-  },
-
-  onRecordMove(e) {
-    if (this.data.stage !== 'recording') return
-    const y = this._touchYOf(e)
-    if (!y) return
-    const dy = y - (this._touchY || y)
-    let zone = ''
-    if (dy <= -ZONE_SLIDE_PX) zone = 'inspire'   // 上滑：存为声音灵感
-    else if (dy >= ZONE_SLIDE_PX) zone = 'discard' // 下滑：删除
-    if (zone !== this._zone) {
-      this._zone = zone
-      if (zone) this._vibrate('light')
-      this.setData({ recZone: zone })
-    }
-  },
+  onRecordStart() { this._startRecord() },
 
   onRecordStop() {
-    const zone = this._zone || ''
-    this._zone = ''
-    this.setData({ recZone: '' })
-    if (zone === 'discard') {
-      this._pendingStopDiscard = true
-      this._stopRecord()
-      return
-    }
-    if (zone === 'inspire') {
-      this._pendingStopInspire = true
-      this._stopRecord()
-      return
-    }
     // 松手：已在录音则停；还在启动中则标记，等 onStart 后延迟停（保证文件有效）
     if (this.data.stage === 'recording') {
       this._stopRecord()
@@ -1182,29 +1212,18 @@ Page({
       this._pendingStop = true
     }
   },
-
-  // 上滑松手：录音直接存为声音灵感（本地量化幅度 → 上传 → 起标题），不经 ASR
-  _directSaveInspiration(tempFilePath, durationMs) {
-    this._resetStage()
-    this._lastDuration = durationMs ? Math.round(durationMs / 1000) : 0
-    audioUtil.computeAmps(tempFilePath, 48, (amps) => {
-      this._lastAmps = amps
-      wx.showLoading({ title: '保存中…', mask: true })
-      wx.cloud.uploadFile({
-        cloudPath: 'audio/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.wav',
-        filePath: tempFilePath
-      }).then((up) => {
-        wx.hideLoading()
-        this._promptInspirationTitle(up.fileID, this._lastAmps, this._lastDuration)
-      }).catch(() => {
-        wx.hideLoading()
-        wx.showToast({ title: '网络不佳，这段录音未保存', icon: 'none', duration: 2200 })
-      })
-    })
-  },
-
   goHistory() { wx.switchTab({ url: '/pages/history/history' }) },
   goSettings() { wx.switchTab({ url: '/pages/settings/settings' }) },
+
+  // 转发给朋友
+  onShareAppMessage() {
+    return { title: '思绪剪藏 · 记录即复利', path: '/pages/index/index' }
+  },
+
+  // 分享到朋友圈
+  onShareTimeline() {
+    return { title: '思绪剪藏 · 记录即复利' }
+  },
 
   goDetail(e) {
     const id = e.detail && e.detail.id

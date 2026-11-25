@@ -14,28 +14,26 @@ Page({
     devConsent: false,
     // 保留原声：成功识别的录音随记录长期保留，详情页可回听
     keepVoice: false,
-    // 语音识别服务状态（null=未知，true=已配置，false=未配置）
-    asrReady: null,
+    // ASR 提供商（'tencent'= 腾讯云 / 'iflytek'= 科大讯飞；录音格式联动 wav/mp3）
+    asrProvider: 'tencent',
+    // 讯飞密钥（用户自己的，存在 users 集合）
+    iflytekConfigured: false,
+    iflytekMask: '',
     // 回收站（软删除 3 天内可还原）
     bin: []
   },
 
-  onShow() {
-    this.load()
-    this._checkAsr()
-    this.loadBin()
+  // 转发给朋友 / 分享到朋友圈
+  onShareAppMessage() {
+    return { title: '思绪剪藏 · 记录即复利', path: '/pages/index/index' }
+  },
+  onShareTimeline() {
+    return { title: '思绪剪藏 · 记录即复利' }
   },
 
-  _checkAsr() {
-    if (!wx.cloud || !wx.cloud.callFunction) return
-    wx.cloud.callFunction({
-      name: config.CLOUD_FUNCTIONS.ASR,
-      data: { test: true }
-    }).then((res) => {
-      this.setData({ asrReady: !!(res.result && res.result.ok) })
-    }).catch(() => {
-      this.setData({ asrReady: false })
-    })
+  onShow() {
+    this.load()
+    this.loadBin()
   },
 
   /* ---------- 读取用户配置 ---------- */
@@ -56,7 +54,10 @@ Page({
             apiKey: doc.apiKey || '',
             apiKeyMask: this._maskKey(doc.apiKey || ''),
             devConsent: !!doc.devConsent,
-            keepVoice: !!doc.keepVoice
+            keepVoice: !!doc.keepVoice,
+            asrProvider: doc.asrProvider || 'tencent',
+            iflytekConfigured: !!(doc.iflytekAppId && doc.iflytekApiKey && doc.iflytekApiSecret),
+            iflytekMask: doc.iflytekAppId ? doc.iflytekAppId.slice(0, 4) + '****' : ''
           })
         }
         // 未配置时默认「原文记录」模式
@@ -352,6 +353,80 @@ Page({
       this._exporting = false
       wx.showToast({ title: '导出失败，请检查网络', icon: 'none' })
     })
+  },
+
+  // 切换 ASR 提供商（录音格式联动：讯飞=wav，腾讯=mp3）
+  setAsrProvider(e) {
+    const p = e.currentTarget.dataset.p
+    if (!p || p === this.data.asrProvider) return
+    if (p === 'iflytek' && !this.data.iflytekConfigured) {
+      // 选讯飞但没配密钥：弹配置流程
+      wx.showModal({
+        title: '使用科大讯飞识别',
+        content: '需要配置你自己的讯飞密钥（在讯飞开放平台 xfyun.cn 免费注册获取）。现在开始配置？',
+        confirmText: '开始配置',
+        cancelText: '暂不',
+        confirmColor: '#E8B44B',
+        success: (r) => {
+          if (r.confirm) {
+            this.setData({ asrProvider: 'iflytek' })
+            this.save({ asrProvider: 'iflytek' })
+            this.inputIflytekKeys()
+          }
+        }
+      })
+      return
+    }
+    this.setData({ asrProvider: p })
+    this.save({ asrProvider: p })
+    const name = p === 'iflytek' ? '科大讯飞' : '腾讯云'
+    wx.showToast({ title: '已切换至' + name, icon: 'none' })
+  },
+
+  // 讯飞密钥三步输入：APPID → APIKey → APISecret
+  inputIflytekKeys() {
+    const steps = [
+      { key: 'iflytekAppId', title: '讯飞 APPID', placeholder: '在讯飞控制台 → 应用信息中查看' },
+      { key: 'iflytekApiKey', title: '讯飞 APIKey', placeholder: '同上页面中的 APIKey' },
+      { key: 'iflytekApiSecret', title: '讯飞 APISecret', placeholder: '同上页面中的 APISecret' }
+    ]
+    const result = {}
+
+    const doStep = (idx) => {
+      if (idx >= steps.length) {
+        // 三步全部完成，保存
+        this.save(result).then(() => {
+          this.setData({
+            iflytekConfigured: true,
+            iflytekMask: result.iflytekAppId.slice(0, 4) + '****'
+          })
+          wx.showToast({ title: '讯飞密钥已保存', icon: 'success' })
+        })
+        return
+      }
+      wx.showModal({
+        title: '配置 ' + steps[idx].title + '（' + (idx + 1) + '/3）',
+        editable: true,
+        placeholderText: steps[idx].placeholder,
+        confirmText: '下一步',
+        cancelText: '取消',
+        confirmColor: '#E8B44B',
+        success: (r) => {
+          if (!r.confirm || !(r.content || '').trim()) {
+            // 取消或空值：中止配置
+            if (!this.data.iflytekConfigured) {
+              // 从未配过：回退到腾讯
+              this.setData({ asrProvider: 'tencent' })
+              this.save({ asrProvider: 'tencent' })
+            }
+            return
+          }
+          result[steps[idx].key] = r.content.trim()
+          doStep(idx + 1)
+        }
+      })
+    }
+    doStep(0)
   },
 
   clearAll() {

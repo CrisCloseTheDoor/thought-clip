@@ -1,7 +1,16 @@
 <view class="page detail-page" wx:if="{{entry}}">
 
+  <!-- 密码门（密码贴纸未解锁时遮盖全部内容） -->
+  <view class="pwd-gate" wx:if="{{needPassword}}">
+    <view class="pwd-gate-icon">🔒</view>
+    <text class="pwd-gate-title">此贴纸已设为密码贴纸</text>
+    <input class="pwd-gate-input" placeholder="输入密码" password bindinput="onPwdInput" value="{{pwdInput}}" />
+    <view class="pwd-gate-btn" bindtap="verifyPwd">查看内容</view>
+    <text class="pwd-gate-hint">忘记密码则无法查看内容（可在编辑中取消密码保护）</text>
+  </view>
+
   <!-- 声音灵感视图 -->
-  <block wx:if="{{isVoice}}">
+  <block wx:elif="{{isVoice}}">
     <view class="card detail-head">
       <view class="type-row">
         <view class="v-kind">♪ 声音灵感</view>
@@ -160,8 +169,11 @@
 
   <!-- 操作 -->
   <view class="action-row">
-    <view class="action" bindtap="copyText">{{editing ? '复制当前' : '复制'}}</view>
-    <view class="action" bindtap="startEdit" wx:if="{{!editing}}">编辑</view>
+    <view class="action" bindtap="copyText" wx:if="{{!entry.hidden}}">{{editing ? '复制当前' : '复制'}}</view>
+    <view class="action" bindtap="startEdit" wx:if="{{!editing && !entry.hidden}}">编辑</view>
+    <view class="action" bindtap="aiFormat" wx:if="{{!editing && !entry.hidden && !isVoice && entry.text && entry.text.length > 30}}">AI 排版</view>
+    <view class="action" bindtap="setPassword" wx:if="{{!editing && !entry.hidden}}">加密</view>
+    <view class="action" bindtap="removePassword" wx:if="{{!editing && entry.hidden}}">去密</view>
     <view class="action danger" bindtap="deleteEntry">删除</view>
   </view>
   </block>

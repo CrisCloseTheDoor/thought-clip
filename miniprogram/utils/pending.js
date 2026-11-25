@@ -75,6 +75,15 @@ function dropByClientIds(ids) {
 // 不加锁会同时读到同一份队列、各自全部补传，造成成倍重复
 let _flushing = false
 
+// 简字符串哈希：为旧队列项生成确定性 clientId（同内容 → 同 ID → 服务端可去重）
+function _hashStr(s) {
+    let h = 5381
+    for (let i = 0; i < s.length; i++) {
+        h = ((h << 5) + h + s.charCodeAt(i)) & 0xFFFFFFFF
+    }
+    return Math.abs(h).toString(36)
+}
+
 // 补传离线队列；成功返回补传条数
 async function flushPendingQueue() {
   if (_flushing) return 0
@@ -85,13 +94,13 @@ async function flushPendingQueue() {
     const remaining = []
     let done = 0
     for (const item of q) {
-      // 旧队列条目没有 dayKey：用录入时刻推算
+      // 旧队列条目没有 dayKey/clientId：用录入时刻和内容哈希补齐
       const dayKey = item.dayKey || fmt.dayKey(new Date(item.localCreatedAt || Date.now()))
+      const clientId = item.clientId || ('q' + _hashStr((item.raw || '') + '|' + dayKey))
       try {
         const common = {
           dayKey,
-          clientId: item.clientId || '',
-          // 原始录入时间：补传的记录落回它真正的时间线位置
+          clientId,
           clientCreatedAt: item.localCreatedAt || Date.now()
         }
         const data = item.kind === 'voice'

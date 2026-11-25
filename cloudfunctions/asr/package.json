@@ -1,10 +1,11 @@
 {
   "name": "asr",
-  "version": "1.0.0",
-  "description": "腾讯云 ASR 语音转文字",
+  "version": "1.1.0",
+  "description": "语音转文字（支持腾讯云 ASR / 科大讯飞 IAT，可在设置页切换）",
   "main": "index.js",
   "dependencies": {
     "tencentcloud-sdk-nodejs-asr": "^4.0.0",
-    "wx-server-sdk": "~2.6.3"
+    "wx-server-sdk": "~2.6.3",
+    "ws": "^8.14.2"
   }
 }

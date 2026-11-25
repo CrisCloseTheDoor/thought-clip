@@ -1,6 +1,33 @@
-<view class="entry-card {{entry.kind === 'voice' ? 'voice-card' : ''}}" bindtap="onTap" bindlongpress="onLongPress">
+<view class="entry-card {{entry.kind === 'voice' ? 'voice-card' : ''}} {{entry.kind === 'monthlyReview' ? 'weekly-card' : ''}} {{entry.hidden ? 'hidden-card' : ''}}" bindtap="onTap" bindlongpress="onLongPress">
+  <!-- 密码贴纸：内容隐藏，显示锁图标 -->
+  <block wx:if="{{entry.hidden}}">
+    <view class="type-bar pwd"></view>
+    <view class="body">
+      <view class="pwd-row">
+        <text class="pwd-icon">🔒</text>
+        <text class="pwd-label">密码贴纸</text>
+      </view>
+      <view class="text pwd-title">{{entry.title || '密码贴纸'}}</view>
+      <view class="meta">
+        <text class="chip">🔒 密码保护</text>
+        <text class="time" wx:if="{{!compact}}">{{timeText}}</text>
+      </view>
+    </view>
+  </block>
+  <!-- 思维模式月复盘变体 -->
+  <block wx:elif="{{entry.kind === 'monthlyReview'}}">
+    <view class="type-bar weekly"></view>
+    <view class="body">
+      <view class="w-head">
+        <view class="w-badge">🧠 思维模式月复盘</view>
+        <text class="v-dur" wx:if="{{entry.duration}}">{{entry.duration}}s</text>
+      </view>
+      <view class="w-text">{{entry.text}}</view>
+    </view>
+  </block>
+
   <!-- 声音灵感变体：标题 + 量化幅度 + 内联回听 -->
-  <block wx:if="{{entry.kind === 'voice'}}">
+  <block wx:elif="{{entry.kind === 'voice'}}">
     <view class="type-bar music"></view>
     <view class="body">
       <view class="v-head">

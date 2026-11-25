@@ -82,11 +82,24 @@
   <view class="card group">
     <view class="switch-row">
       <view class="switch-body">
-        <view class="mode-name">腾讯云 ASR 服务</view>
-        <view class="mode-desc" wx:if="{{asrReady === null}}">检测中…</view>
-        <view class="mode-desc ok" wx:elif="{{asrReady}}">✓ 已配置，按住麦克风即可语音记录</view>
-        <view class="mode-desc warn" wx:else>⚠ 未配置：需在云函数 asr 环境变量填入腾讯云 SecretId/SecretKey（见 README）</view>
+        <view class="mode-name">ASR 识别引擎</view>
+        <view class="mode-desc" wx:if="{{asrProvider === 'iflytek'}}">科大讯飞（中英混杂表现更佳，录音为无损格式，需配置自己的讯飞密钥）</view>
+        <view class="mode-desc" wx:else>腾讯云（默认，零配置，录音为压缩格式上传更快）</view>
       </view>
+    </view>
+    <view class="asr-provider-row">
+      <view class="asr-pbtn {{asrProvider === 'tencent' ? 'on' : ''}}" bindtap="setAsrProvider" data-p="tencent">腾讯云（默认使用）</view>
+      <view class="asr-pbtn {{asrProvider === 'iflytek' ? 'on' : ''}}" bindtap="setAsrProvider" data-p="iflytek">科大讯飞</view>
+    </view>
+
+    <!-- 讯飞密钥配置（选讯飞时显示） -->
+    <view class="iflytek-key-block" wx:if="{{asrProvider === 'iflytek'}}">
+      <view class="mode-desc" wx:if="{{iflytekConfigured}}">✓ 已配置：{{iflytekMask}}</view>
+      <view class="mode-desc warn" wx:else>尚未配置讯飞密钥，无法使用讯飞识别</view>
+      <view class="key-actions">
+        <view class="btn btn-primary" bindtap="inputIflytekKeys">{{iflytekConfigured ? '更换密钥' : '配置密钥'}}</view>
+      </view>
+      <view class="privacy-note">密钥仅保存在你自己的云数据库中，只用于调用科大讯飞语音听写接口。可在讯飞开放平台（xfyun.cn）免费注册获取。</view>
     </view>
   </view>
 

@@ -6,7 +6,7 @@ const audioUtil = require('../../utils/audio')
 
 const FB_CHIPS = [
   { k: 'digest', label: '提炼要点' },
-  { k: 'challenge', label: '挑战我的想法' },
+  { k: 'challenge', label: '分析思维框架' },
   { k: 'action', label: '下一步行动' },
   { k: 'companion', label: '陪我说说' }
 ]
@@ -29,10 +29,14 @@ Page({
     fbHasAny: false,
     fbScrollInto: '',  // scroll-into-view 锚点：新回复飞入最新一条
     fbLoading: false,
+    aiFormatting: false, // AI 排版进行中
     followText: '',    // 追问输入
     aiEnabled: false,
     // 反馈时检索历史上下文（全局开关，开启需同意）
-    ctxEnabled: false
+    ctxEnabled: false,
+    // 密码贴纸
+    needPassword: false,
+    pwdInput: ''
   },
 
   onLoad(options) {
@@ -50,6 +54,14 @@ Page({
     if (this.data.voicePlaying || this.data.playingVoice) audioUtil.stopPlayback()
   },
 
+  // 转发给朋友 / 分享到朋友圈
+  onShareAppMessage() {
+    return { title: '思绪剪藏 · 记录即复利', path: '/pages/index/index' }
+  },
+  onShareTimeline() {
+    return { title: '思绪剪藏 · 记录即复利' }
+  },
+
   load() {
     if (!wx.cloud || !wx.cloud.database) return
     const db = wx.cloud.database()
@@ -65,6 +77,20 @@ Page({
           label: files.length > 1 ? '录音 ' + (i + 1) : '录音'
         }))
         const isVoice = e.kind === 'voice'
+
+        // 密码贴纸：未解锁时仅显示标题和密码输入门
+        if (e.hidden && !this._pwdVerified) {
+          this.setData({
+            entry: Object.assign({}, e, { timeText: fmt.fullTime(t) }),
+            needPassword: true,
+            pwdInput: '',
+            voices: [],
+            isVoice: false,
+            voicePlaying: false
+          })
+          return
+        }
+
         this.setData({
           entry: Object.assign({}, e, {
             timeText: fmt.fullTime(t),
@@ -79,6 +105,7 @@ Page({
           voices: isVoice ? [] : voices,
           isVoice,
           voicePlaying: false,
+          needPassword: false,
           editText: e.text || e.raw
         })
         // 反馈：按"类别 = 唯一对话串"构建线程；用户轮归属其前一条 AI 轮的类别
@@ -194,9 +221,11 @@ Page({
       const r = res.result || {}
       if (r.ok) {
         try { wx.vibrateShort({ type: 'light' }) } catch (err) { /* noop */ }
-        // 新反馈开启该类别的对话串，自动聚焦并飞入最新回复
+        // 新反馈开启该类别的对话串，自动聚焦并打字机显示
         this.setData({ fbTab: kind })
         this._scrollToLatest = true
+        this._fbRaw = r.feedbacks || []
+        this._threads = this._buildFbThreads(this._fbRaw)
         this.load()
       } else if (r.error === 'no-key') {
         this._guideEnableAi()
@@ -350,8 +379,12 @@ Page({
       const r = res.result || {}
       if (r.ok) {
         this.setData({ fbLoading: false, followText: '' })
-        this._scrollToLatest = true // 回复到达后飞入最新一条
+        this._scrollToLatest = true
         try { wx.vibrateShort({ type: 'light' }) } catch (e) { /* noop */ }
+        // 更新原始数据，然后打字机显示 AI 回复（用户轮立即显示）
+        const fbs = r.feedbacks || []
+        this._fbRaw = fbs
+        this._threads = this._buildFbThreads(fbs)
         this.load()
       } else if (r.error === 'no-key') {
         this.setData({ fbLoading: false })
@@ -363,6 +396,120 @@ Page({
     }).catch(() => {
       this.setData({ fbLoading: false })
       wx.showToast({ title: '网络不佳，稍后再试', icon: 'none' })
+    })
+  },
+
+  // AI 排版：按语义分自然段；结果进入编辑态，用户确认保存才写回，取消则不变
+  aiFormat() {
+    if (this.data.aiFormatting || this.data.editing) return
+    if (!this.data.aiEnabled) {
+      this._guideEnableAi()
+      return
+    }
+    const content = ((this.data.entry && (this.data.entry.text || this.data.entry.raw)) || '').trim()
+    if (content.length < 30) {
+      wx.showToast({ title: '内容较短，无需排版', icon: 'none' })
+      return
+    }
+    this.setData({ aiFormatting: true })
+    wx.showLoading({ title: '正在排版…', mask: true })
+    wx.cloud.callFunction({
+      name: config.CLOUD_FUNCTIONS.SAVE_ENTRY,
+      data: { formatOnly: true, entryId: this.data.id }
+    }).then((res) => {
+      wx.hideLoading()
+      const r = res.result || {}
+      if (r.ok && r.text) {
+        this.setData({ aiFormatting: false, editing: true, editText: r.text })
+        try { wx.vibrateShort({ type: 'light' }) } catch (e) { /* noop */ }
+        wx.showToast({ title: '排版完成，请确认保存', icon: 'none', duration: 2000 })
+      } else if (r.error === 'no-key') {
+        this.setData({ aiFormatting: false })
+        this._guideEnableAi()
+      } else {
+        this.setData({ aiFormatting: false })
+        wx.showToast({ title: '排版失败，稍后再试', icon: 'none' })
+      }
+    }).catch(() => {
+      wx.hideLoading()
+      this.setData({ aiFormatting: false })
+      wx.showToast({ title: '网络不佳，稍后再试', icon: 'none' })
+    })
+  },
+
+  /* ---------- 密码贴纸 ---------- */
+
+  onPwdInput(e) { this.setData({ pwdInput: e.detail.value }) },
+
+  verifyPwd() {
+    if (this.data.pwdInput === (this.data.entry.password || '')) {
+      this.setData({ needPassword: false, pwdInput: '' })
+    } else {
+      wx.showToast({ title: '密码错误', icon: 'none' })
+      this.setData({ pwdInput: '' })
+    }
+  },
+
+  // 设为密码贴纸：弹窗输入密码（两次确认），明文存 DB（仅为 UI 隐藏）
+  setPassword() {
+    let pwd = ''
+    const doSet = (title) => {
+      const db = wx.cloud.database()
+      db.collection('entries').doc(this.data.id)
+        .update({ data: { hidden: true, password: pwd, title } })
+        .then(() => {
+          wx.showToast({ title: '已设为密码贴纸', icon: 'success' })
+          this.load()
+        })
+        .catch(() => wx.showToast({ title: '设置失败', icon: 'none' }))
+    }
+    wx.showModal({
+      title: '设置密码贴纸（step 1）',
+      editable: true,
+      placeholderText: '设置查看密码',
+      confirmText: '下一步',
+      success: (r) => {
+        pwd = (r.content || '').trim()
+        if (!r.confirm) return
+        if (!pwd) { wx.showToast({ title: '密码不能为空', icon: 'none' }); return }
+        wx.showModal({
+          title: '密码贴纸标题（step 2）',
+          editable: true,
+          placeholderText: fmt.dayKey(new Date()) + ' ' + fmt.hm(new Date()),
+          confirmText: '确认',
+          success: (r2) => {
+            if (!r2.confirm) return
+            const title = (r2.content || '').trim() || fmt.dayKey(new Date()) + ' ' + fmt.hm(new Date())
+            doSet(title)
+          }
+        })
+      }
+    })
+  },
+
+  // 取消密码保护：需验证当前密码，解除后内容正常可见
+  removePassword() {
+    wx.showModal({
+      title: '取消密码保护',
+      editable: true,
+      placeholderText: '输入当前密码',
+      success: (r) => {
+        const pwd = (r.content || '').trim()
+        if (!r.confirm) return
+        if (pwd !== (this.data.entry.password || '')) {
+          wx.showToast({ title: '密码错误', icon: 'none' })
+          return
+        }
+        const db = wx.cloud.database()
+        const _ = db.command
+        db.collection('entries').doc(this.data.id)
+          .update({ data: { hidden: _.remove(), password: _.remove() } })
+          .then(() => {
+            wx.showToast({ title: '已取消密码保护', icon: 'success' })
+            this.load()
+          })
+          .catch(() => wx.showToast({ title: '操作失败', icon: 'none' }))
+      }
     })
   },
 

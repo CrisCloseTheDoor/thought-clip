@@ -1,4 +1,4 @@
-<view class="page history-page" bindtap="clearDelete">
+<view class="page history-page" bindtap="clearActions">
 
   <view class="page-title">历史记录</view>
 
@@ -71,9 +71,18 @@
         bind:tapentry="goDetail"
         bind:tapkeyword="onKeywordTap"
         bind:longpressentry="onCardLongPress"
+        bind:longpress="onCardLongPress"
+        data-id="{{item._id}}"
+        bind:tap="goDetail"
+        bind:touchstart="onCardTouchStart"
+        bind:touchmove="onCardTouchMove"
+        bind:touchend="onCardTouchEnd"
+        bind:touchcancel="onCardTouchEnd"
       />
-      <view class="h-del {{deleteId === item._id ? 'show' : ''}}"
-        catchtap="deleteFromList" data-id="{{item._id}}">删除</view>
+      <view class="h-actbar" wx:if="{{actionId === item._id}}">
+        <view class="h-act" catchtap="onActPwd" data-id="{{item._id}}">{{item.hidden ? '取消密码' : '设为密码'}}</view>
+        <view class="h-act danger" catchtap="onActDel" data-id="{{item._id}}">删除</view>
+      </view>
     </view>
   </view>
 

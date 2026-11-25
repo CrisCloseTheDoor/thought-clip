@@ -26,14 +26,39 @@ Page({
     longestStreak: null,
     heatColumns: [],
     heatTip: { show: false, key: '', text: '', x: 0, y: 0 },
-    deleteId: ''           // 长按弹删除按钮的记录
+    actionId: '',       // 长按展开内联操作条的记录
   },
 
   _page: 0,
 
+  // 转发给朋友 / 分享到朋友圈
+  onShareAppMessage() {
+    return { title: '思绪剪藏 · 记录即复利', path: '/pages/index/index' }
+  },
+  onShareTimeline() {
+    return { title: '思绪剪藏 · 记录即复利' }
+  },
+
   onShow() {
-    this.reload()
-    this._loadStats()
+    if (this._returningFromDetail) {
+      // 从详情返回：原地刷新数据（不重置分页），恢复滚动位置
+      this._returningFromDetail = false
+      this._refreshInPlace()
+      if (this._returnScroll > 0) {
+        wx.nextTick(() => {
+          wx.pageScrollTo({ scrollTop: this._returnScroll, duration: 0 })
+        })
+      }
+    } else {
+      this.reload()
+      this._loadStats()
+    }
+  },
+
+  // 追踪滚动位置（用于详情返回恢复 + 浮窗消失）
+  onPageScroll(e) {
+    this._scrollTop = e.scrollTop
+    this.clearHeatTip()
   },
 
   onHide() {
@@ -41,9 +66,62 @@ Page({
     audioUtil.stopPlayback()
   },
 
+  // 原地刷新：重新拉取已加载的页数，不重置分页
+  _refreshInPlace() {
+    if (!wx.cloud || !wx.cloud.database) return
+    const db = wx.cloud.database()
+    const pages = Math.max(this._page, 1)
+    db.collection('entries')
+      .where(this._buildWhere())
+      .orderBy('createdAt', 'desc')
+      .limit(pages * PAGE_SIZE)
+      .get()
+      .then((res) => {
+        const list = (res.data || []).map((e) => {
+          const t = fmt.toDate(e.createdAt)
+          const meta = typeMeta(e.type)
+          return {
+            _id: e._id,
+            kind: e.kind || '',
+            title: e.title || '',
+            hidden: e.hidden || false,
+            password: e.password || '',
+            amps: e.amps || [],
+            duration: e.duration || 0,
+            audioFileIDs: e.audioFileIDs || [],
+            text: e.text || e.raw,
+            type: e.type,
+            keywords: e.keywords || [],
+            createdAt: e.createdAt,
+            raw: e.raw,
+            timeText: fmt.hm(t),
+            dayKey: e.dayKey || fmt.dayKey(t),
+            typeLabel: meta.label,
+            typeColor: meta.color
+          }
+        })
+        // 全量重建分组（不追加，原地替换保持位置）
+        const groups = []
+        list.forEach((item) => {
+          const last = groups[groups.length - 1]
+          if (last && last.dayKey === item.dayKey) {
+            last.items.push(item)
+          } else {
+            groups.push({
+              dayKey: item.dayKey,
+              label: fmt.friendlyDate(fmt.toDate(item.createdAt)),
+              items: [item]
+            })
+          }
+        })
+        this.setData({ groups, finished: list.length < pages * PAGE_SIZE })
+      })
+      .catch(() => { /* 静默 */ })
+  },
+
   reload() {
     this._page = 0
-    this.setData({ groups: [], finished: false })
+    this.setData({ groups: [], finished: false, actionId: '' })
     this.loadMore()
   },
 
@@ -85,6 +163,8 @@ Page({
             _id: e._id,
             kind: e.kind || '',
             title: e.title || '',
+            hidden: e.hidden || false,
+            password: e.password || '',
             amps: e.amps || [],
             duration: e.duration || 0,
             audioFileIDs: e.audioFileIDs || [],
@@ -255,51 +335,159 @@ Page({
     if (this.data.heatTip.show) this.setData({ 'heatTip.show': false, 'heatTip.key': '' })
   },
 
-  /* ---------- 长按删除（进回收站） ---------- */
+  /* ---------- 长按操作（ActionSheet：密码贴纸 / 删除） ---------- */
+
+  /* ---------- 卡片点按/长按：三通道兜底 ----------
+     1. 组件 triggerEvent（tapentry/longpressentry）
+     2. 原生事件冒泡（tap/longpress，跨组件边界，不依赖组件事件注入，
+        规避 lazyCodeLoading 在真机调试下组件事件失效的场景）
+     3. 自定义 500ms 计时长按（touchstart~end，容忍 12px 手抖），
+        规避真机上手指微动触发 touchmove 导致系统长按被取消
+     多通道同手势并发触发，由短窗时间锁去重（展开后改为内联操作条，不再调用面板类原生 API） */
 
   onCardLongPress(e) {
-    const id = e.detail && e.detail.id
-    if (!id || this.data.deleteId === id) return
+    const id = (e.detail && e.detail.id) ||
+      (e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.id)
+    if (!id) return
+    this.openCardActions(id)
+  },
+
+  onCardTouchStart(e) {
+    const t = e.touches && e.touches[0]
+    const id = e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.id
+    if (!t || !id) return
+    this._lpTouch = { x: t.clientX, y: t.clientY }
+    this._lpFiredId = ''
+    clearTimeout(this._lpTimer)
+    this._lpTimer = setTimeout(() => {
+      this._lpTimer = null
+      this.openCardActions(id)
+    }, 500)
+  },
+
+  onCardTouchMove(e) {
+    if (!this._lpTouch || !this._lpTimer) return
+    const t = e.touches && e.touches[0]
+    if (!t) return
+    const dx = t.clientX - this._lpTouch.x
+    const dy = t.clientY - this._lpTouch.y
+    if (dx * dx + dy * dy > 144) { // 移动超 12px 视为滚动，取消长按
+      clearTimeout(this._lpTimer)
+      this._lpTimer = null
+    }
+  },
+
+  onCardTouchEnd() {
+    clearTimeout(this._lpTimer)
+    this._lpTimer = null
+    this._lpTouch = null
+  },
+
+  openCardActions(id) {
+    const now = Date.now()
+    // 多通道同一次手势并发触发，800ms 内同 id 只处理一次
+    if (this._lpSetId === id && now - this._lpSetAt < 800) return
+    this._lpSetId = id
+    this._lpSetAt = now
+    // 记录本次长按，抑制收指被误判为 tap 的导航泄漏
+    this._lpFiredId = id
+    this._lpFiredAt = now
     try { wx.vibrateShort({ type: 'light' }) } catch (err) { /* noop */ }
-    this.setData({ deleteId: id })
+    // 操作条已展开时再长按同一条 = 收起
+    if (this.data.actionId === id) { this.setData({ actionId: '' }); return }
+    this.setData({ actionId: id })
   },
 
-  clearDelete() {
-    if (this.data.deleteId) this.setData({ deleteId: '' })
-  },
+  /* ---------- 卡片内联操作条（长按展开：密码贴纸 / 删除） ---------- */
 
-  deleteFromList(e) {
+  onActPwd(e) {
     const id = e.currentTarget.dataset.id
     if (!id) return
+    this.setData({ actionId: '' })
+    const item = this._findEntry(id)
+    if (item && item.hidden) this._removePwdFromList(id, item)
+    else this._setPwdFromList(id, item)
+  },
+
+  onActDel(e) {
+    const id = e.currentTarget.dataset.id
+    if (!id) return
+    this.setData({ actionId: '' })
+    this.deleteEntryById(id)
+  },
+
+  clearActions() {
+    if (this.data.actionId) this.setData({ actionId: '' })
+  },
+
+  _setPwdFromList(id, item) {
+    const defaultTitle = (item && item.text ? item.text : '').slice(0, 20) || fmt.dayKey(new Date())
     wx.showModal({
-      title: '删除这条记录？',
-      content: '将移入回收站，3 天内可在「设置 → 回收站」还原。',
-      confirmText: '删除',
-      confirmColor: '#F0666E',
+      title: '设为密码贴纸',
+      editable: true,
+      placeholderText: '设置查看密码（标题默认取内容前 20 字）',
+      confirmText: '确认',
       success: (r) => {
-        this.setData({ deleteId: '' })
+        const pwd = (r.content || '').trim()
         if (!r.confirm) return
-        audioUtil.stopPlayback()
-        wx.cloud.database().collection('entries').doc(id)
-          .update({ data: { deletedAt: new Date() } })
+        if (!pwd) { wx.showToast({ title: '密码不能为空', icon: 'none' }); return }
+        const db = wx.cloud.database()
+        db.collection('entries').doc(id)
+          .update({ data: { hidden: true, password: pwd, title: defaultTitle } })
           .then(() => {
-            stats.invalidate()
-            wx.showToast({ title: '已移入回收站', icon: 'none' })
+            wx.showToast({ title: '已设为密码贴纸', icon: 'success' })
             this.reload()
           })
-          .catch(() => wx.showToast({ title: '删除失败', icon: 'none' }))
+          .catch(() => wx.showToast({ title: '操作失败', icon: 'none' }))
+      }
+    })
+  },
+
+  _removePwdFromList(id) {
+    wx.showModal({
+      title: '取消密码保护',
+      editable: true,
+      placeholderText: '输入当前密码',
+      success: (r) => {
+        const pwd = (r.content || '').trim()
+        if (!r.confirm) return
+        const item = this._findEntry(id)
+        if (item && item.password !== pwd) {
+          wx.showToast({ title: '密码错误', icon: 'none' })
+          return
+        }
+        const db = wx.cloud.database()
+        const _ = db.command
+        db.collection('entries').doc(id)
+          .update({ data: { hidden: _.remove(), password: _.remove() } })
+          .then(() => {
+            wx.showToast({ title: '已取消密码保护', icon: 'success' })
+            this.reload()
+          })
+          .catch(() => wx.showToast({ title: '操作失败', icon: 'none' }))
       }
     })
   },
 
   goDetail(e) {
-    const id = e.detail && e.detail.id
-    // 删除按钮显示中时，首次点按先收起按钮（不跳转）
-    if (this.data.deleteId) {
-      const was = this.data.deleteId
-      this.clearDelete()
+    const id = (e.detail && e.detail.id) ||
+      (e.currentTarget && e.currentTarget.dataset && e.currentTarget.dataset.id)
+    if (!id) return
+    const now = Date.now()
+    // 双通道（组件 tapentry + 原生冒泡 tap）同一次点按并发去重
+    if (this._tapTs && now - this._tapTs < 800) return
+    this._tapTs = now
+    // 长按后个别机型把收指误判为 tap：同卡短窗内忽略（优先于操作条逻辑，避免刚展开就被收指关掉）
+    if (this._lpFiredId && this._lpFiredId === id && now - this._lpFiredAt < 1500) return
+    // 操作条展开时，首次点按只收起操作条（不跳转）
+    if (this.data.actionId) {
+      const was = this.data.actionId
+      this.setData({ actionId: '' })
       if (id === was) return
     }
-    if (id) wx.navigateTo({ url: '/pages/detail/detail?id=' + id })
+    // 保存滚动位置，返回时恢复到点进去的位置而非顶部
+    this._returningFromDetail = true
+    this._returnScroll = this._scrollTop || 0
+    wx.navigateTo({ url: '/pages/detail/detail?id=' + id })
   }
 })
